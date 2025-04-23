@@ -111,8 +111,7 @@ If you find this is an empty directory, you can stop research immediately and as
 {expert_section}
 {human_section}
 {web_research_section}
-{context7_guidance}
-{treesitter_guidance}
+{mcp_guidance}
 
 {custom_tools_section}
 

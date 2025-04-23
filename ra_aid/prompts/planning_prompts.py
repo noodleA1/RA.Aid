@@ -73,8 +73,7 @@ Guidelines:
 {human_section}
 {web_research_section}
 {custom_tools_section}
-{task_master_guidance}
-{github_guidance}
+{mcp_guidance}
 
 
 You have often been criticized for:

@@ -16,6 +16,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from ra_aid.agent_context import agent_context, is_completed, reset_completion_flags, should_exit
+import importlib.resources as pkg_resources
+
 # Import agent_utils functions at runtime to avoid circular imports
 from ra_aid import agent_utils
 from ra_aid.console.formatting import print_stage_header
@@ -336,33 +338,33 @@ def run_planning_agent(
 {expert_guidance}
 </expert guidance>"""
 
-    # Conditionally add Task Master guidance
-    task_master_guidance = ""
+    # Dynamically load MCP guidance based on active servers
+    active_mcp_servers = get_config_repository().get("active_mcp_servers", [])
+    mcp_guidance_parts = []
+    # Task Master guidance depends on planning flag AND server activity
     if get_config_repository().get("task_master_planning_enabled", False):
-        task_master_guidance = """
-    Task Master Integration:
-        Task Master tools are available. Before generating a new plan, check if a `tasks.json` file exists. 
-        If it does, use `task-master list` and `task-master show` to understand the existing plan and align with it.
-        If the user provided a PRD file path, prioritize using `task-master parse-prd <filepath>` to generate the initial task list.
-        When generating or refining complex steps, consider using `task-master expand --id=<task_id>`.
-        After a task implementation is successfully completed (i.e., `request_task_implementation` returns `success: true` and a `task_master_id`), you MUST immediately call `task-master set-status --id=<returned_task_master_id> --status=done` to keep the Task Master state synchronized.
-        """
-
-
-    # Conditionally add GitHub guidance
-    github_guidance = ""
-    if "github" in active_mcp_servers:
-        github_guidance = """
-    GitHub Integration:
-        Tools are available to interact directly with the GitHub repository's platform features (Issues, PRs, etc.).
-        - Use `create_issue` to report bugs or track tasks found during planning/implementation.
-        - Use `list_issues`, `get_issue`, `add_issue_comment` to check existing issues.
-        - Use `create_pull_request` AFTER local changes are committed and pushed to a feature branch.
-        - Use `get_pull_request`, `list_pull_requests`, `add_pull_request_review_comment` for PR management.
-        - Use `get_file_contents` to read files directly from the remote repository if needed.
-        - Use `create_or_update_file` for making direct commits via the API (use cautiously, prefer local git workflow).
-        - Use `search_code` to search the remote repository.
-        """
+        try:
+            guidance_content = pkg_resources.read_text("ra_aid.prompts.mcp_guidance", "taskmaster-ai.txt")
+            mcp_guidance_parts.append(guidance_content)
+        except FileNotFoundError:
+            logger.warning("Task Master guidance file not found, skipping.")
+        except Exception as e:
+            logger.error(f"Error loading Task Master guidance: {e}")
+            
+    # Other servers just depend on activity
+    for server_name in active_mcp_servers:
+        if server_name == "taskmaster-ai": # Already handled above if planning enabled
+            continue 
+        try:
+            guidance_file = f"{server_name}.txt"
+            guidance_content = pkg_resources.read_text("ra_aid.prompts.mcp_guidance", guidance_file)
+            mcp_guidance_parts.append(guidance_content)
+        except FileNotFoundError:
+            logger.warning(f"Guidance file for active MCP server '{server_name}' not found, skipping.")
+        except Exception as e:
+            logger.error(f"Error loading guidance for MCP server '{server_name}': {e}")
+            
+    mcp_guidance = "\n".join(mcp_guidance_parts).strip()
 
     planning_prompt = PLANNING_PROMPT.format(
         current_date=current_date,
@@ -371,8 +373,7 @@ def run_planning_agent(
         human_section=human_section,
         web_research_section=web_research_section,
         custom_tools_section=custom_tools_section,
-        task_master_guidance=task_master_guidance,
-        github_guidance=github_guidance,
+        mcp_guidance=mcp_guidance, # Combined MCP guidance
         base_task=base_task,
         project_info=formatted_project_info,
         research_notes=formatted_research_notes,
