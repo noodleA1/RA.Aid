@@ -86,9 +86,9 @@ version = {attr = "ra_aid.version.__version__"}
 path = "ra_aid/__version__.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/ra_aid", "/examples", "/ra_aid/prompts/mcp_guidance"]
+include = ["ra_aid", "examples", "ra_aid/prompts/mcp_guidance"]
 
 [tool.hatch.build.targets.wheel]
-include = ["/ra_aid", "/examples", "/ra_aid/prompts/mcp_guidance"]
+include = ["ra_aid", "examples", "ra_aid/prompts/mcp_guidance"]
 packages = ["ra_aid"]
 

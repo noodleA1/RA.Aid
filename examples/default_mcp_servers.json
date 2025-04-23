@@ -15,7 +15,6 @@
         "DEFAULT_SUBTASKS": "5",
         "DEFAULT_PRIORITY": "medium"
       }
-    }
     },
     "tree_sitter": {
       "command": "python",
@@ -23,20 +22,16 @@
         "-m",
         "mcp_server_tree_sitter.server"
       ]
-    }
     },
     "github": {
       "command": "docker",
       "args": [
         "run",
-        "-i", // Interactive for stdio
-        "--rm", // Remove container on exit
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", // Expect token in env
+        "-i", 
+        "--rm", 
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", 
         "ghcr.io/github/github-mcp-server"
       ]
-      // Assumes GITHUB_PERSONAL_ACCESS_TOKEN is set in the environment running docker
-      // We will rely on RA.Aid having GITHUB_TOKEN and docker inheriting it.
-      // The server inside docker should pick up GITHUB_PERSONAL_ACCESS_TOKEN.
     }
   }
 }

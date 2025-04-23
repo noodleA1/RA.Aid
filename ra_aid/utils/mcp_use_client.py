@@ -38,7 +38,11 @@ class MCPUseClientSync:
         self._loop_started = threading.Event()
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        self._loop_started.wait() # Wait for loop to be running
+        if not self._loop_started.wait(timeout=10): # Wait up to 10s
+            # Log and re-raise to ensure __main__ knows init failed
+            err_msg = "Background event loop failed to start within 10s"
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
 
         self._client: MCPClient | None = None
         self._tools: List[BaseTool] = []
@@ -86,7 +90,7 @@ class MCPUseClientSync:
         if self.loop.is_running():
             self.loop.call_soon_threadsafe(self.loop.stop)
         
-        self.thread.join() # Wait for thread to finish
+        self.thread.join(timeout=10) # Wait up to 10s for thread
         if self.thread.is_alive():
              logger.warning("MCP client background thread did not exit cleanly.")
 
