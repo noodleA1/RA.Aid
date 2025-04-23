@@ -345,7 +345,7 @@ def run_planning_agent(
         If it does, use `task-master list` and `task-master show` to understand the existing plan and align with it.
         If the user provided a PRD file path, prioritize using `task-master parse-prd <filepath>` to generate the initial task list.
         When generating or refining complex steps, consider using `task-master expand --id=<task_id>`.
-        After a task implementation is successfully completed by the implementation agent, you MUST call `task-master set-status --id=<task_id> --status=done` to keep the Task Master state synchronized.
+        After a task implementation is successfully completed (i.e., `request_task_implementation` returns `success: true` and a `task_master_id`), you MUST immediately call `task-master set-status --id=<returned_task_master_id> --status=done` to keep the Task Master state synchronized.
         """
 
     planning_prompt = PLANNING_PROMPT.format(

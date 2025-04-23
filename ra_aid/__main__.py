@@ -510,9 +510,11 @@ Examples:
         help="Path to MCP-Use JSON config file (enables MCP-Use tools)",
     )
     parser.add_argument(
-        "--no-default-mcp",
-        action="store_true",
-        help="Disable the default MCP server integrations (Context7, Task Master)",
+        "--disable-default-mcp",
+        nargs='*',
+        metavar='SERVER_NAME',
+        help="Disable specific default MCP servers (e.g., context7 taskmaster-ai tree_sitter) or all if no names are given.",
+        default=None # Default is None, meaning don't disable any unless flag is present
     )
     parser.add_argument(
         "--disable-task-master-planning",
@@ -924,38 +926,86 @@ def main():
                 config_repo.set(
                     "custom_tools_enabled", True if args.custom_tools else False
                 )
-                # Handle MCP-Use config
-                mcp_use_config_path = args.mcp_use_config
-                load_default_mcp = not args.no_default_mcp
+                # Handle MCP-Use config loading and filtering
+                user_mcp_config_path = args.mcp_use_config # User-specified path
+                disabled_defaults = args.disable_default_mcp # List of defaults to disable, or None
+                final_mcp_config_source = None # Will be dict or path string
+                mcp_enabled = False
 
-                if mcp_use_config_path and load_default_mcp:
-                    logger.warning(
-                        "--mcp-use-config is provided, ignoring default MCP server integration. "
-                        "Use --no-default-mcp if you only want the specified config."
+                # Determine if we should attempt to load the default config
+                should_load_defaults = True
+                if user_mcp_config_path and disabled_defaults is None:
+                    # Case 1: User specified a config, didn't touch --disable-default-mcp.
+                    # Load ONLY the user's config.
+                    logger.info(
+                        f"--mcp-use-config ('{user_mcp_config_path}') provided without --disable-default-mcp. "
+                        "Loading only the specified config."
                     )
-                    load_default_mcp = False # Explicit config takes precedence
-
-                if load_default_mcp:
-                    # Use importlib.resources to safely access package data
+                    should_load_defaults = False
+                    final_mcp_config_source = user_mcp_config_path
+                # Else (Case 2: No user config OR --disable-default-mcp was used): 
+                # We will potentially load defaults (and maybe merge user config later).
+                
+                default_config_dict = {}
+                if should_load_defaults:
                     try:
                         default_mcp_config_path_obj = pkg_resources.files("ra_aid").joinpath("examples/default_mcp_servers.json")
                         if default_mcp_config_path_obj.is_file():
-                             mcp_use_config_path = str(default_mcp_config_path_obj)
-                             logger.info(f"Using default MCP server config: {mcp_use_config_path}")
-                        else:
-                             logger.error(f"Default MCP server config not found within package data. MCP tools will be disabled.")
-                             mcp_use_config_path = None
-                    except (ImportError, FileNotFoundError, NotADirectoryError) as e:
-                         logger.error(f"Error accessing default MCP config via package resources: {e}. MCP tools will be disabled.")
-                         mcp_use_config_path = None
+                            default_config_file_path = str(default_mcp_config_path_obj)
+                            logger.info(f"Loading default MCP server config: {default_config_file_path}")
+                            with open(default_config_file_path, 'r') as f:
+                                default_config_dict = json.load(f)
 
-                if mcp_use_config_path:
-                    config_repo.set("mcp_use_config", mcp_use_config_path)
-                    config_repo.set("mcp_use_enabled", True)
+                            # Filter based on --disable-default-mcp list
+                            if isinstance(disabled_defaults, list):
+                                if not disabled_defaults: # Empty list means disable all
+                                    logger.info("--disable-default-mcp used with no arguments. Disabling all default MCP servers.")
+                                    default_config_dict["mcpServers"] = {}
+                                else:
+                                    servers_to_keep = {}
+                                    disabled_set = set(disabled_defaults)
+                                    logger.info(f"Disabling default MCP servers specified by flag: {disabled_set}")
+                                    for name, config in default_config_dict.get("mcpServers", {}).items():
+                                        if name not in disabled_set:
+                                            servers_to_keep[name] = config
+                                    default_config_dict["mcpServers"] = servers_to_keep
+                        else:
+                            logger.error("Default MCP server config not found within package data.")
+                    except (ImportError, FileNotFoundError, NotADirectoryError, json.JSONDecodeError) as e:
+                        logger.error(f"Error loading or processing default MCP config: {e}. Proceeding without defaults.")
+                        default_config_dict = {} # Ensure it's empty on error
+
+                # Now, determine the final config source (path or merged dict)
+                if user_mcp_config_path and should_load_defaults:
+                    # Case 2a: Merge user config with (potentially filtered) defaults
+                    try:
+                        with open(user_mcp_config_path, 'r') as f:
+                            user_config_dict = json.load(f)
+                        merged_servers = default_config_dict.get("mcpServers", {})
+                        merged_servers.update(user_config_dict.get("mcpServers", {}))
+                        final_mcp_config_source = {"mcpServers": merged_servers}
+                        logger.info(f"Merged user MCP config '{user_mcp_config_path}' with loaded defaults.")
+                    except (FileNotFoundError, json.JSONDecodeError) as e:
+                        logger.error(f"Error loading user-specified MCP config '{user_mcp_config_path}': {e}. Using only defaults (if any).", exc_info=True)
+                        final_mcp_config_source = default_config_dict # Fallback to defaults
+                elif user_mcp_config_path: # Case 1: Only user config (defaults were skipped)
+                    final_mcp_config_source = user_mcp_config_path
+                elif should_load_defaults: # Case 2b: Only defaults (filtered or not)
+                    final_mcp_config_source = default_config_dict
+                # Else: No user config, no defaults loaded -> final_mcp_config_source remains None
+
+                # Set config repo based on the final source
+                if final_mcp_config_source and (isinstance(final_mcp_config_source, str) or final_mcp_config_source.get("mcpServers")):
+                    config_repo.set("mcp_use_config", final_mcp_config_source) # Store dict or path
+                    mcp_enabled = True
                 else:
-                    config_repo.set("mcp_use_enabled", False)
+                    logger.info("No MCP servers configured or enabled.")
+                    mcp_enabled = False
+                
+                config_repo.set("mcp_use_enabled", mcp_enabled)
 
                 config_repo.set("cowboy_mode", args.cowboy_mode) # Also add here for non-server mode
+
 
                 # Initialize and register MCP-Use client for cleanup if enabled
                 mcp_use_client_instance = None
@@ -964,6 +1014,14 @@ def main():
                 task_master_planning_enabled = config_repo.get("mcp_use_enabled", False) and not args.disable_task_master_planning
                 config_repo.set("task_master_planning_enabled", task_master_planning_enabled)
                 logger.info(f"Task Master planning integration enabled: {task_master_planning_enabled}")
+
+                # Check for required API keys if Task Master planning is enabled
+                if task_master_planning_enabled:
+                    if not os.getenv("ANTHROPIC_API_KEY"):
+                        logger.warning("Task Master planning is enabled, but ANTHROPIC_API_KEY environment variable is not set. Task Master tools requiring it may fail.")
+                    # Optional: Check for PERPLEXITY_API_KEY if needed by specific TM features
+                    # if not os.getenv("PERPLEXITY_API_KEY"):
+                    #     logger.warning("PERPLEXITY_API_KEY not set, Task Master research features may be unavailable.")
 
                 if config_repo.get("mcp_use_enabled", False):
                     try:
@@ -976,6 +1034,7 @@ def main():
                         atexit.register(mcp_use_client_instance.close)
                         logger.info("MCP-Use client initialized successfully and cleanup registered.")
                     except Exception as e:
+                        if isinstance(mcp_use_config, dict) and \"tree_sitter\" in mcp_use_config.get(\"mcpServers\", {}):\n                            logger.error(\"Tree-sitter server was configured but failed to initialize. This might be due to missing C/C++ build tools or Tree-sitter parser build errors.\")\n                        elif isinstance(mcp_use_config, str): # If path, check if name is in path?\ Less reliable\n                             if \"tree_sitter\" in mcp_use_config:\n                                  logger.error(\"Tree-sitter server might have been configured but failed to initialize. Check for missing C/C++ build tools or Tree-sitter parser build errors.\")\n
                         logger.error(f"Failed to initialize MCP-Use client or connect to its servers: {e}")
                         logger.warning("Disabling MCP-Use integration for this run due to initialization error.")
                         # Ensure it's disabled if init fails

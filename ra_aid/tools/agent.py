@@ -369,13 +369,18 @@ def request_research_and_implementation(query: str) -> Dict[str, Any]:
 
 
 @tool("request_task_implementation")
-def request_task_implementation(task_spec: str) -> str:
+def request_task_implementation(task_spec: str, task_master_id: Optional[str] = None) -> Dict[str, Any]:
     """Spawn an implementation agent to execute the given task.
 
     Task specs should have the requirements. Generally, the spec will not include any code.
 
     Args:
         task_spec: REQUIRED The full task specification (markdown format, typically one part of the overall plan)
+        task_master_id: Optional ID of the corresponding task in Task Master (e.g., "3" or "5.2")
+    
+    Returns:
+        Dictionary containing the completion message, success status, reason for failure (if any),
+        and the original task_master_id if provided.
     """
     # Initialize model from config
     model = initialize_llm(
@@ -455,8 +460,20 @@ def request_task_implementation(task_spec: str) -> str:
     # Get and reset work log if at root depth
     work_log = get_work_log()
 
-    # Clear completion state
+    # Clear completion state before returning
     reset_completion_flags()
+
+    # Prepare result dictionary
+    result_data = {
+        "completion_message": completion_message,
+        "success": success,
+        "reason": reason,
+        "task_master_id": task_master_id # Pass back the ID
+    }
+    if work_log is not None:
+        result_data["work_log"] = work_log
+
+    return result_data
 
     # Check if the agent has crashed
     agent_crashed = is_crashed()
