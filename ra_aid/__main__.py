@@ -83,6 +83,8 @@ from ra_aid.server.server import app as fastapi_app
 from ra_aid.tool_configs import get_chat_tools, set_modification_tools, get_custom_tools
 from ra_aid.tools.human import ask_human
 
+import atexit
+
 logger = get_logger(__name__)
 
 # Configure litellm to suppress debug logs
@@ -270,6 +272,9 @@ Examples:
     ra-aid -m "Add error handling to the database module"
     ra-aid -m "Explain the authentication flow" --research-only
     ra-aid --msg-file task_description.txt
+    ra-aid -m "Use context7 to find latest pandas API for reading CSVs" # Context7 enabled by default
+    ra-aid -m "Implement feature X" --no-context7 # Disable default Context7
+    ra-aid -m "Use my custom browser tool" --mcp-use-config ./my_browser_mcp.json --no-context7 # Use specific MCP config
         """,
     )
     parser.add_argument(
@@ -920,7 +925,7 @@ def main():
                         mcp_use_config_path = default_context7_path
                         logger.info(f"Using default Context7 config: {mcp_use_config_path}")
                     else:
-                        logger.error(f"Default Context7 config not found at {default_context7_path}, disabling.")
+                        logger.error(f"Default Context7 config not found at {default_context7_path}. Context7 will be disabled. Ensure the file exists or provide a config via --mcp-use-config.")
                         mcp_use_config_path = None
 
                 if mcp_use_config_path:
@@ -931,8 +936,24 @@ def main():
 
                 config_repo.set("cowboy_mode", args.cowboy_mode) # Also add here for non-server mode
 
-                # Validate custom tools function signatures
-                get_custom_tools()
+                # Initialize and register MCP-Use client for cleanup if enabled
+                mcp_use_client_instance = None
+                if config_repo.get("mcp_use_enabled", False):
+                    try:
+                        mcp_use_config = config_repo.get("mcp_use_config")
+                        # Import here to avoid circular dependency issues
+                        from ra_aid.utils.mcp_use_client import MCPUseClientSync 
+                        mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
+                        # Register cleanup function
+                        atexit.register(mcp_use_client_instance.close)
+                        logger.info("MCP-Use client initialized and cleanup registered.")
+                    except Exception as e:
+                        logger.error(f"Failed to initialize MCP-Use client: {e}")
+                        # Ensure it's disabled if init fails
+                        config_repo.set("mcp_use_enabled", False) 
+
+                # Validate custom tools function signatures (this will now load MCP tools via the instance if available)
+                get_custom_tools(mcp_use_client=mcp_use_client_instance)
                 custom_tools_enabled = config_repo.get("custom_tools_enabled", False)
 
                 # Build status panel with memory statistics

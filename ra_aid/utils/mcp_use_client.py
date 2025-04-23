@@ -14,6 +14,11 @@ class MCPUseClientSync:
     synchronous ``langchain_core.tools.BaseTool`` instances.  This wrapper
     starts a background event-loop, initializes the MCP client and converts
     every server tool to a ``StructuredTool`` via the official
+    Note:
+        Using MCP servers often requires external dependencies managed by that
+        server. For example, using the Context7 server requires ``npx`` (Node.js)
+        to be available in the environment to run ``@upstash/context7-mcp``.
+
     ``LangChainAdapter``.
     """
 

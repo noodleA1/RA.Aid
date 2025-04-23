@@ -55,7 +55,7 @@ def set_modification_tools(use_aider=False):
         MODIFICATION_TOOLS.extend([file_str_replace, put_complete_file_contents])
 
 
-def get_custom_tools() -> List[BaseTool]:
+def get_custom_tools(mcp_use_client: Optional[MCPUseClientSync] = None) -> List[BaseTool]:
     """Dynamically import and return custom tools from the configured module.
     
     The custom tools module must export a 'tools' attribute that is a list of
@@ -108,14 +108,19 @@ def get_custom_tools() -> List[BaseTool]:
             console.print(Panel(Markdown(custom_tool_output.strip()), title="🛠️ Custom Tools Available", border_style="magenta"))
 
         # Set global
-        # Integrate MCP-Use tools if config provided
-        mcp_use_cfg = get_config_repository().get("mcp_use_config", None)
-        if mcp_use_cfg:
+        # Integrate MCP-Use tools if client instance is provided
+        if mcp_use_client:
             try:
-                mcp_client = MCPUseClientSync(mcp_use_cfg)
-                tools.extend(mcp_client.get_tools_sync())
+                mcp_tools = mcp_use_client.get_tools_sync()
+                tools.extend(mcp_tools)
+                if mcp_tools:
+                    console.print(Panel(f"[green]Loaded {len(mcp_tools)} MCP-Use tools", title="MCP-Use", border_style="green"))
+                else:
+                    # This case might happen if the config was valid but had no servers/tools
+                    console.print(Panel("[yellow]MCP-Use client initialized, but no tools found in the configuration", title="MCP-Use", border_style="yellow"))
             except Exception as e:
-                console.print(Panel(f"[red]Failed to load MCP-Use tools: {e}"))
+                # Error during get_tools_sync, client init might have succeeded earlier
+                console.print(Panel(f"[red]Error retrieving tools from MCP-Use client: {e}", title="MCP-Use Error", border_style="red"))
 
         CUSTOM_TOOLS.clear()
         CUSTOM_TOOLS.extend(tools)
