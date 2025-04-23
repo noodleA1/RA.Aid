@@ -145,6 +145,33 @@ brew install ra-aid
 
 ### Prerequisites
 
+- **Python 3.10+**
+- **Git**
+- **Ripgrep (`rg`)**: Required for efficient code searching. Install via your system package manager (e.g., `apt install ripgrep`, `brew install ripgrep`, `choco install ripgrep`).
+
+### Additional Dependencies for Enhanced Features (Default)
+
+RA.Aid integrates with several external tools via the Model Context Protocol (MCP) by default to enhance its capabilities. These require additional dependencies:
+
+- **Node.js & npm/npx:** Required for the default MCP servers (Context7, Task Master). Install from [nodejs.org](https://nodejs.org/).
+- **C/C++ Build Tools:** Required by the Tree-sitter MCP server (`mcp-server-tree-sitter`) to build language parsers. Installation varies by OS:
+    - **Debian/Ubuntu:** `sudo apt-get update && sudo apt-get install build-essential`
+    - **Fedora:** `sudo dnf groupinstall "Development Tools"`
+    - **macOS:** Install Xcode Command Line Tools: `xcode-select --install`
+    - **Windows:** Install Visual Studio with C++ build tools (select "Desktop development with C++" workload in the installer).
+
+These MCP servers provide:
+- **Context7:** Up-to-date documentation for libraries/APIs.
+- **Task Master:** Advanced task breakdown and management, especially from PRDs.
+- **Tree-sitter:** Structural code analysis (AST, symbols, dependencies).
+
+You can disable these default integrations using the `--disable-default-mcp` flag (see Usage).
+
+### API Keys
+
+**Note:** The default Task Master integration requires `ANTHROPIC_API_KEY` to be set.
+
+
 Before using RA.Aid, you'll need API keys for the required AI services:
 
 ```bash
@@ -217,6 +244,9 @@ More information is available in our [Usage Examples](https://docs.ra-aid.ai/cat
 - `--planner-provider`: Provider to use specifically for planning tasks (falls back to --provider if not specified)
 - `--planner-model`: Model to use specifically for planning tasks (falls back to --model if not specified)
 - `--cowboy-mode`: Skip interactive approval for shell commands
+- `--mcp-use-config`: Path to a custom MCP-Use JSON config file. If provided without `--disable-default-mcp`, only this config will be loaded.
+- `--disable-default-mcp [SERVER ...]`: Disable specific default MCP servers (context7, taskmaster-ai, tree_sitter) or all if no names are given. Can be used with `--mcp-use-config` to merge custom config with filtered defaults.
+- `--disable-task-master-planning`: Force RA.Aid to use its internal planner instead of Task Master tools, even if the Task Master MCP server is active.
 - `--expert-provider`: The LLM provider to use for expert knowledge queries (choices: anthropic, openai, openrouter, openai-compatible, gemini)
 - `--expert-model`: The model name to use for expert knowledge queries (required for non-OpenAI providers)
 - `--hil, -H`: Enable human-in-the-loop mode for interactive assistance during task execution
@@ -267,15 +297,23 @@ More information is available in our [Usage Examples](https://docs.ra-aid.ai/cat
    ra-aid -m "Analyze the current error handling patterns" --research-only
    ```
 
-2. Code Research:
-   ```bash
-   ra-aid -m "Explain how the authentication middleware works" --research-only
-   ```
+### MCP Integration (Default)
 
-3. Refactoring:
-   ```bash
-   ra-aid -m "Refactor the database connection code to use connection pooling" --cowboy-mode
-   ```
+RA.Aid now integrates with several powerful tools via the Model Context Protocol (MCP) by default, enhancing its research, planning, and analysis capabilities:
+
+- **Context7:** Provides the agent with access to up-to-date documentation and code examples for various libraries and frameworks, reducing hallucinations and improving code quality.
+- **Task Master:** Enables advanced task breakdown, planning based on Product Requirements Documents (PRDs), and structured task management within the project.
+- **Tree-sitter:** Allows the agent to perform structural code analysis using Abstract Syntax Trees (ASTs), enabling deeper understanding of code relationships, symbol definitions, and dependencies beyond simple text search.
+
+These integrations are enabled by default but require the additional dependencies listed in the [Prerequisites](#prerequisites) section (Node.js, potentially C++ build tools).
+
+You can manage these integrations using the following flags:
+- `--disable-default-mcp`: Disable all default MCP servers.
+- `--disable-default-mcp context7 taskmaster-ai`: Disable specific default servers.
+- `--mcp-use-config ./my_config.json`: Use only a custom MCP configuration.
+- `--disable-task-master-planning`: Keep Task Master tools available but use RA.Aid's internal planner.
+
+If a default MCP server fails to initialize (e.g., due to missing dependencies), it will be automatically disabled for that run, and its tools/guidance will not be available to the agent.
 
 ### Human-in-the-Loop Mode
 
