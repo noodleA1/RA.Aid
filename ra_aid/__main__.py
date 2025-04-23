@@ -3,7 +3,10 @@ import logging
 import os
 import sys
 import json
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ra_aid.utils.mcp_use_client import MCPUseClientSync
 import uuid
 from datetime import datetime
 
@@ -1010,7 +1013,7 @@ def main():
 
 
                 # Initialize and register MCP-Use client for cleanup if enabled
-                mcp_use_client_instance: Optional[MCPUseClientSync] = None
+                mcp_use_client_instance: Optional["MCPUseClientSync"] = None
                 active_mcp_servers = [] # Default to empty list
                 if config_repo.get("mcp_use_enabled", False):
                     try:

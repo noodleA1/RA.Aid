@@ -168,37 +168,35 @@ class MCPUseClientSync:
 
     async def _auto_register_tree_sitter(self, client: MCPClient):
         """Automatically register the current project if tree-sitter server is active."""
+        # Check if tree_sitter session exists and is active first
         try:
             ts_session = client.get_session("tree_sitter")
             if not ts_session or not ts_session.connector:
                 logger.debug("Tree-sitter MCP session not found or inactive.")
                 return
+        except ValueError:
+            logger.debug("Tree-sitter MCP server ('tree_sitter') not configured.")
+            return
+        except Exception as e:
+             logger.error(f"Error getting tree-sitter session: {e}", exc_info=True)
+             return
 
-            # Check if register_project_tool exists
-            tool_names = [tool.name for tool in self._tools]
-            if "register_project_tool" not in tool_names:
-                logger.warning("Tree-sitter server found, but register_project_tool is missing.")
-                return
+        # Now check if the tool exists among loaded tools
+        register_tool = next((t for t in self._tools if t.name == "register_project_tool"), None)
+        if not register_tool:
+            logger.warning("Tree-sitter server is active, but register_project_tool is missing.")
+            return
 
+        # Proceed with registration
+        try:
             project_path = os.getcwd()
             project_name = os.path.basename(project_path)
             logger.info(f"Auto-registering project '{project_name}' at '{project_path}' with tree-sitter server.")
-
-            # Find the actual tool object to call it
-            register_tool = next((t for t in self._tools if t.name == "register_project_tool"), None)
-            if not register_tool:
-                 logger.error("Could not find register_project_tool object despite name match.") # Should not happen
-                 return
             
             # Call the tool via its coroutine
-            # We need to wrap the call because the LangChain adapter expects kwargs
-            # but the underlying MCP tool might take positional args or specific dict structure.
-            # Assuming register_project_tool takes 'path' and 'name' as kwargs based on docs.
             await register_tool.acall(path=project_path, name=project_name)
             logger.info(f"Project '{project_name}' registered with tree-sitter.")
 
-        except ValueError:
-            logger.debug("Tree-sitter MCP server ('tree_sitter') not configured or session not active.")
         except Exception as e:
-            logger.error(f"Failed to auto-register project with tree-sitter: {e}", exc_info=True)
+            logger.error(f"Failed to auto-register project with tree-sitter during tool call: {e}", exc_info=True)
 
