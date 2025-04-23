@@ -36,6 +36,8 @@ from ra_aid.tools.memory import plan_implementation_completed
 from ra_aid.database.repositories.config_repository import get_config_repository
 
 # Define constant tool groups
+from ra_aid.utils.mcp_use_client import MCPUseClientSync
+
 CUSTOM_TOOLS = []
 
 def set_modification_tools(use_aider=False):
@@ -106,6 +108,15 @@ def get_custom_tools() -> List[BaseTool]:
             console.print(Panel(Markdown(custom_tool_output.strip()), title="🛠️ Custom Tools Available", border_style="magenta"))
 
         # Set global
+        # Integrate MCP-Use tools if config provided
+        mcp_use_cfg = get_config_repository().get("mcp_use_config", None)
+        if mcp_use_cfg:
+            try:
+                mcp_client = MCPUseClientSync(mcp_use_cfg)
+                tools.extend(mcp_client.get_tools_sync())
+            except Exception as e:
+                console.print(Panel(f"[red]Failed to load MCP-Use tools: {e}"))
+
         CUSTOM_TOOLS.clear()
         CUSTOM_TOOLS.extend(tools)
 

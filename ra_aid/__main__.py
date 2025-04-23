@@ -343,6 +343,7 @@ Examples:
         default=None,
         choices=VALID_PROVIDERS,
         help="The LLM provider to use for expert knowledge queries",
+
     )
     parser.add_argument(
         "--expert-model",
@@ -496,6 +497,17 @@ Examples:
         type=str,
         help="File path of Python module containing custom tools (e.g. ./path/to_custom_tools.py)",
     )
+    parser.add_argument(
+        "--mcp-use-config",
+        type=str,
+        help="Path to MCP-Use JSON config file (enables MCP-Use tools)",
+    )
+    parser.add_argument(
+        "--with-context7",
+        action="store_true",
+        help="Shortcut: load default Context7 MCP server config",
+    )
+
     if args is None:
         args = sys.argv[1:]
     parsed_args = parser.parse_args(args)
@@ -889,6 +901,24 @@ def main():
                 config_repo.set(
                     "custom_tools_enabled", True if args.custom_tools else False
                 )
+                # Handle MCP-Use config
+                mcp_use_config_path = args.mcp_use_config
+                if args.with_context7:
+                    if mcp_use_config_path:
+                        logger.warning("--with-context7 overrides --mcp-use-config")
+                    # Construct the path relative to the script's location
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    mcp_use_config_path = os.path.join(script_dir, "..", "examples", "context7.json")
+                    if not os.path.exists(mcp_use_config_path):
+                        logger.error(f"Default Context7 config not found at {mcp_use_config_path}")
+                        mcp_use_config_path = None # Prevent loading non-existent file
+                
+                if mcp_use_config_path:
+                    config_repo.set("mcp_use_config", mcp_use_config_path)
+                    config_repo.set("mcp_use_enabled", True)
+                else:
+                    config_repo.set("mcp_use_enabled", False)
+
                 config_repo.set("cowboy_mode", args.cowboy_mode) # Also add here for non-server mode
 
                 # Validate custom tools function signatures
