@@ -1041,6 +1041,12 @@ def main():
                     if not os.getenv("ANTHROPIC_API_KEY"):
                         logger.warning("Task Master planning is enabled, but ANTHROPIC_API_KEY environment variable is not set. Task Master tools requiring it may fail.")
 
+
+                # Check for GitHub token if GitHub MCP server might be active
+                if "github" in active_mcp_servers:
+                     if not os.getenv("GITHUB_TOKEN"):
+                          logger.warning("GitHub MCP server is active, but GITHUB_TOKEN environment variable is not set. GitHub tools will likely fail.")
+
                 # Validate custom tools function signatures (this will now load MCP tools via the instance if available)
                 get_custom_tools(mcp_use_client=mcp_use_client_instance)
                 custom_tools_enabled = config_repo.get("custom_tools_enabled", False)

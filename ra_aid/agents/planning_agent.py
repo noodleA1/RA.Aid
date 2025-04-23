@@ -348,6 +348,22 @@ def run_planning_agent(
         After a task implementation is successfully completed (i.e., `request_task_implementation` returns `success: true` and a `task_master_id`), you MUST immediately call `task-master set-status --id=<returned_task_master_id> --status=done` to keep the Task Master state synchronized.
         """
 
+
+    # Conditionally add GitHub guidance
+    github_guidance = ""
+    if "github" in active_mcp_servers:
+        github_guidance = """
+    GitHub Integration:
+        Tools are available to interact directly with the GitHub repository's platform features (Issues, PRs, etc.).
+        - Use `create_issue` to report bugs or track tasks found during planning/implementation.
+        - Use `list_issues`, `get_issue`, `add_issue_comment` to check existing issues.
+        - Use `create_pull_request` AFTER local changes are committed and pushed to a feature branch.
+        - Use `get_pull_request`, `list_pull_requests`, `add_pull_request_review_comment` for PR management.
+        - Use `get_file_contents` to read files directly from the remote repository if needed.
+        - Use `create_or_update_file` for making direct commits via the API (use cautiously, prefer local git workflow).
+        - Use `search_code` to search the remote repository.
+        """
+
     planning_prompt = PLANNING_PROMPT.format(
         current_date=current_date,
         working_directory=working_directory,
@@ -355,7 +371,8 @@ def run_planning_agent(
         human_section=human_section,
         web_research_section=web_research_section,
         custom_tools_section=custom_tools_section,
-        task_master_guidance=task_master_guidance, # Add Task Master guidance here
+        task_master_guidance=task_master_guidance,
+        github_guidance=github_guidance,
         base_task=base_task,
         project_info=formatted_project_info,
         research_notes=formatted_research_notes,

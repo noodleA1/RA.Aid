@@ -149,6 +149,7 @@ brew install ra-aid
 - **Git**
 - **Ripgrep (`rg`)**: Required for efficient code searching. Install via your system package manager (e.g., `apt install ripgrep`, `brew install ripgrep`, `choco install ripgrep`).
 
+- **Docker:** Required if using the default GitHub MCP server integration (which runs in a container). Install from [docker.com](https://www.docker.com/products/docker-desktop/). Ensure the Docker daemon is running.
 ### Additional Dependencies for Enhanced Features (Default)
 
 RA.Aid integrates with several external tools via the Model Context Protocol (MCP) by default to enhance its capabilities. These require additional dependencies:
@@ -163,11 +164,13 @@ RA.Aid integrates with several external tools via the Model Context Protocol (MC
 These MCP servers provide:
 - **Context7:** Up-to-date documentation for libraries/APIs.
 - **Task Master:** Advanced task breakdown and management, especially from PRDs.
+- **GitHub:** Interact with GitHub issues, PRs, code search, etc.
 - **Tree-sitter:** Structural code analysis (AST, symbols, dependencies).
 
 You can disable these default integrations using the `--disable-default-mcp` flag (see Usage).
 
 ### API Keys
+- **GITHUB_TOKEN:** Required by the default GitHub MCP server integration for API access.
 
 **Note:** The default Task Master integration requires `ANTHROPIC_API_KEY` to be set.
 
@@ -245,7 +248,7 @@ More information is available in our [Usage Examples](https://docs.ra-aid.ai/cat
 - `--planner-model`: Model to use specifically for planning tasks (falls back to --model if not specified)
 - `--cowboy-mode`: Skip interactive approval for shell commands
 - `--mcp-use-config`: Path to a custom MCP-Use JSON config file. If provided without `--disable-default-mcp`, only this config will be loaded.
-- `--disable-default-mcp [SERVER ...]`: Disable specific default MCP servers (context7, taskmaster-ai, tree_sitter) or all if no names are given. Can be used with `--mcp-use-config` to merge custom config with filtered defaults.
+- `--disable-default-mcp [SERVER ...]`: Disable specific default MCP servers (context7, taskmaster-ai, tree_sitter, github) or all if no names are given. Can be used with `--mcp-use-config` to merge custom config with filtered defaults.
 - `--disable-task-master-planning`: Force RA.Aid to use its internal planner instead of Task Master tools, even if the Task Master MCP server is active.
 - `--expert-provider`: The LLM provider to use for expert knowledge queries (choices: anthropic, openai, openrouter, openai-compatible, gemini)
 - `--expert-model`: The model name to use for expert knowledge queries (required for non-OpenAI providers)
