@@ -1008,10 +1008,31 @@ def main():
 
 
                 # Initialize and register MCP-Use client for cleanup if enabled
-                mcp_use_client_instance = None
+                mcp_use_client_instance: Optional[MCPUseClientSync] = None
+                active_mcp_servers = [] # Default to empty list
+                if config_repo.get("mcp_use_enabled", False):
+                    try:
+                        mcp_use_config = config_repo.get("mcp_use_config")
+                        from ra_aid.utils.mcp_use_client import MCPUseClientSync 
+                        logger.info(f"Attempting to initialize MCP-Use client...")
+                        mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
+                        atexit.register(mcp_use_client_instance.close)
+                        active_mcp_servers = mcp_use_client_instance.get_active_server_names()
+                        logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
+                    except Exception as e:
+                        logger.error(f"MCP-Use client initialization failed: {e}")
+                        logger.warning("MCP-Use integration will be disabled for this run.")
+                        # Ensure flags reflect the failure
+                        config_repo.set("mcp_use_enabled", False)
+                        mcp_enabled = False # Update local var too
+                        active_mcp_servers = []
+                        mcp_use_client_instance = None
+                
+                config_repo.set("active_mcp_servers", active_mcp_servers) # Store active servers
+
                 # Determine if Task Master planning integration should be enabled
-                # Requires MCP tools to be enabled AND the disable flag NOT set
-                task_master_planning_enabled = config_repo.get("mcp_use_enabled", False) and not args.disable_task_master_planning
+                task_master_active = "taskmaster-ai" in active_mcp_servers
+                task_master_planning_enabled = task_master_active and not args.disable_task_master_planning
                 config_repo.set("task_master_planning_enabled", task_master_planning_enabled)
                 logger.info(f"Task Master planning integration enabled: {task_master_planning_enabled}")
 
@@ -1019,28 +1040,6 @@ def main():
                 if task_master_planning_enabled:
                     if not os.getenv("ANTHROPIC_API_KEY"):
                         logger.warning("Task Master planning is enabled, but ANTHROPIC_API_KEY environment variable is not set. Task Master tools requiring it may fail.")
-                    # Optional: Check for PERPLEXITY_API_KEY if needed by specific TM features
-                    # if not os.getenv("PERPLEXITY_API_KEY"):
-                    #     logger.warning("PERPLEXITY_API_KEY not set, Task Master research features may be unavailable.")
-
-                if config_repo.get("mcp_use_enabled", False):
-                    try:
-                        mcp_use_config = config_repo.get("mcp_use_config")
-                        # Import here to avoid circular dependency issues
-                        from ra_aid.utils.mcp_use_client import MCPUseClientSync 
-                        logger.info(f"Attempting to initialize MCP-Use client with config: {mcp_use_config}")
-                        mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
-                        # Register cleanup function only if initialization succeeds
-                        atexit.register(mcp_use_client_instance.close)
-                        logger.info("MCP-Use client initialized successfully and cleanup registered.")
-                    except Exception as e:
-                        if isinstance(mcp_use_config, dict) and \"tree_sitter\" in mcp_use_config.get(\"mcpServers\", {}):\n                            logger.error(\"Tree-sitter server was configured but failed to initialize. This might be due to missing C/C++ build tools or Tree-sitter parser build errors.\")\n                        elif isinstance(mcp_use_config, str): # If path, check if name is in path?\ Less reliable\n                             if \"tree_sitter\" in mcp_use_config:\n                                  logger.error(\"Tree-sitter server might have been configured but failed to initialize. Check for missing C/C++ build tools or Tree-sitter parser build errors.\")\n
-                        logger.error(f"Failed to initialize MCP-Use client or connect to its servers: {e}")
-                        logger.warning("Disabling MCP-Use integration for this run due to initialization error.")
-                        # Ensure it's disabled if init fails
-                        config_repo.set("mcp_use_enabled", False) 
-                        config_repo.set("task_master_planning_enabled", False) # Also disable TM planning
-                        mcp_use_client_instance = None # Ensure instance is None
 
                 # Validate custom tools function signatures (this will now load MCP tools via the instance if available)
                 get_custom_tools(mcp_use_client=mcp_use_client_instance)

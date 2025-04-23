@@ -42,6 +42,7 @@ class MCPUseClientSync:
 
         self._client: MCPClient | None = None
         self._tools: List[BaseTool] = []
+        self._active_server_names: List[str] = [] # Track successfully initialized
         self._closed = False
 
         fut = asyncio.run_coroutine_threadsafe(
@@ -55,6 +56,10 @@ class MCPUseClientSync:
     def get_tools_sync(self) -> List[BaseTool]:
         """Return the converted LangChain tools (synchronous)."""
         return self._tools
+
+    def get_active_server_names(self) -> List[str]:
+        """Return the names of MCP servers that initialized successfully."""
+        return self._active_server_names
 
     def close(self) -> None:
         """Close all MCP sessions and stop the event-loop. Idempotent."""
@@ -102,21 +107,60 @@ class MCPUseClientSync:
 
 
     async def _setup_client(self, config: str | dict[str, Any]):
-        if isinstance(config, str):
-            client = MCPClient.from_config_file(config)
-        else:
-            client = MCPClient.from_dict(config)
+        """Initialize client, sessions, tools, and track active servers."""
+        try:
+            if isinstance(config, str):
+                client = MCPClient.from_config_file(config)
+            else:
+                client = MCPClient.from_dict(config)
+            self._client = client
+        except Exception as e:
+            logger.error(f"MCPClient creation failed: {e}", exc_info=True)
+            # Re-raise to be caught by the caller in __main__
+            raise
 
-        # create sessions for all declared servers so tools are available
-        await client.create_all_sessions(auto_initialize=True)
+        # Create sessions individually to catch errors per server
+        server_names = self._client.get_server_names()
+        active_sessions = {}
+        initialization_errors = {}
 
+        for name in server_names:
+            try:
+                logger.info(f"Initializing MCP session for server: {name}")
+                session = await self._client.create_session(name, auto_initialize=True)
+                active_sessions[name] = session
+                self._active_server_names.append(name)
+                logger.info(f"MCP session for '{name}' initialized successfully.")
+            except Exception as e:
+                logger.error(f"Failed to initialize MCP session for server '{name}': {e}", exc_info=True)
+                initialization_errors[name] = str(e)
+                # Hint for tree-sitter common issues
+                if name == "tree_sitter":
+                     logger.error("Tree-sitter server failed. This might be due to missing C/C++ build tools or Tree-sitter parser build errors.")
+        
+        if initialization_errors:
+             logger.warning(f"Some MCP servers failed to initialize: {list(initialization_errors.keys())}")
+             # Continue with successfully initialized servers
+
+        # Get tools ONLY from active sessions
         adapter = LangChainAdapter()
-        self._tools = await adapter.create_tools(client)
+        all_tools = []
+        for name, session in active_sessions.items():
+            try:
+                session_tools = await adapter.create_tools_from_session(session)
+                all_tools.extend(session_tools)
+                logger.debug(f"Loaded {len(session_tools)} tools from active server '{name}'")
+            except Exception as e:
+                 logger.error(f"Failed to get tools from active MCP session '{name}': {e}", exc_info=True)
+        
+        self._tools = all_tools
+        logger.info(f"Total MCP tools loaded from active servers: {len(self._tools)}")
 
-        # Attempt to auto-register the current project with tree-sitter server
-        await self._auto_register_tree_sitter(client)
-
-        self._client = client
+        # Attempt to auto-register the current project with tree-sitter if it's active
+        if "tree_sitter" in self._active_server_names:
+            await self._auto_register_tree_sitter(self._client)
+        else:
+             logger.debug("Skipping tree-sitter auto-registration as server is not active.")
 
     async def _auto_register_tree_sitter(self, client: MCPClient):
         """Automatically register the current project if tree-sitter server is active."""

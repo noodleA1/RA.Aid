@@ -111,15 +111,8 @@ If you find this is an empty directory, you can stop research immediately and as
 {expert_section}
 {human_section}
 {web_research_section}
-    Context7 Tool Guidance:
-        If the task involves understanding or using specific libraries, frameworks, or APIs (e.g., React, Next.js, pandas, AWS SDK, Stripe API), **strongly prioritize** using the `resolve-library-id` and `get-library-docs` tools (if available) to fetch the most current documentation and examples *before* relying solely on your internal knowledge or web searches. Outdated information can lead to errors. Clearly state which library you are fetching documentation for when using these tools.
-
-    Tree-sitter Tool Guidance:
-        If available, use tree-sitter tools (`get_ast`, `get_symbols`, `run_query`, `get_dependencies`) for structural code analysis. This complements text search (`run_shell_command` with `rg`). For example:
-        - Use `get_symbols` to list functions/classes in a file.
-        - Use `run_query` with specific tree-sitter queries to find patterns (e.g., function calls, class definitions).
-        - Use `get_dependencies` to understand relationships between code components.
-        Remember to use the project name (likely the directory name) identified during registration when calling these tools.
+{context7_guidance}
+{treesitter_guidance}
 
 {custom_tools_section}
 
