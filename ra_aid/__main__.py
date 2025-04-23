@@ -508,9 +508,9 @@ Examples:
         help="Path to MCP-Use JSON config file (enables MCP-Use tools)",
     )
     parser.add_argument(
-        "--no-context7",
+        "--no-default-mcp",
         action="store_true",
-        help="Disable the default Context7 MCP server integration",
+        help="Disable the default MCP server integrations (Context7, Task Master)",
     )
 
     if args is None:
@@ -908,24 +908,24 @@ def main():
                 )
                 # Handle MCP-Use config
                 mcp_use_config_path = args.mcp_use_config
-                load_default_context7 = not args.no_context7
+                load_default_mcp = not args.no_default_mcp
 
-                if mcp_use_config_path and load_default_context7:
+                if mcp_use_config_path and load_default_mcp:
                     logger.warning(
-                        "--mcp-use-config is provided, ignoring default Context7 integration. "
-                        "Use --no-context7 if you only want the specified config."
+                        "--mcp-use-config is provided, ignoring default MCP server integration. "
+                        "Use --no-default-mcp if you only want the specified config."
                     )
-                    load_default_context7 = False # Explicit config takes precedence
+                    load_default_mcp = False # Explicit config takes precedence
 
-                if load_default_context7:
+                if load_default_mcp:
                     # Construct the path relative to the script's location
                     script_dir = os.path.dirname(os.path.abspath(__file__))
-                    default_context7_path = os.path.join(script_dir, "..", "examples", "context7.json")
-                    if os.path.exists(default_context7_path):
-                        mcp_use_config_path = default_context7_path
-                        logger.info(f"Using default Context7 config: {mcp_use_config_path}")
+                    default_mcp_config_path = os.path.join(script_dir, "..", "examples", "default_mcp_servers.json")
+                    if os.path.exists(default_mcp_config_path):
+                        mcp_use_config_path = default_mcp_config_path
+                        logger.info(f"Using default MCP server config: {mcp_use_config_path}")
                     else:
-                        logger.error(f"Default Context7 config not found at {default_context7_path}. Context7 will be disabled. Ensure the file exists or provide a config via --mcp-use-config.")
+                        logger.error(f"Default MCP server config not found at {default_mcp_config_path}. MCP tools will be disabled. Ensure the file exists or provide a config via --mcp-use-config.")
                         mcp_use_config_path = None
 
                 if mcp_use_config_path:

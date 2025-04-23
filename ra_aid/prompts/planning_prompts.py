@@ -73,6 +73,9 @@ Guidelines:
 {human_section}
 {web_research_section}
 {custom_tools_section}
+    Task Master Tool Guidance:
+        If the user provides a Product Requirements Document (PRD) or a detailed task description, consider using the `parse-prd` tool (if available via Task Master) to automatically break it down into structured tasks before creating your own plan. You can then refine or use these tasks directly.
+
 
 You have often been criticized for:
   - Overcomplicating things.
