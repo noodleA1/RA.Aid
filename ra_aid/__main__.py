@@ -2,6 +2,11 @@ import argparse
 import logging
 import os
 import sys
+import json
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ra_aid.utils.mcp_use_client import MCPUseClientSync
 import uuid
 from datetime import datetime
 
@@ -82,6 +87,8 @@ from ra_aid.prompts.custom_tools_prompts import DEFAULT_CUSTOM_TOOLS_PROMPT
 from ra_aid.server.server import app as fastapi_app
 from ra_aid.tool_configs import get_chat_tools, set_modification_tools, get_custom_tools
 from ra_aid.tools.human import ask_human
+
+import importlib.resources as pkg_resources
 
 import atexit
 
@@ -508,14 +515,32 @@ Examples:
         help="Path to MCP-Use JSON config file (enables MCP-Use tools)",
     )
     parser.add_argument(
-        "--no-context7",
-        action="store_true",
-        help="Disable the default Context7 MCP server integration",
+        "--disable-default-mcp",
+        nargs='*',
+        metavar='SERVER_NAME',
+        help="Disable specific default MCP servers (e.g., context7 taskmaster-ai tree_sitter) or all if no names are given.",
+        default=None # Default is None, meaning don't disable any unless flag is present
     )
+    parser.add_argument(
+        "--disable-task-master-planning",
+        action="store_true",
+        help="Force RA.Aid to use its internal planner instead of Task Master tools, even if Task Master MCP is available.",
+    )
+
 
     if args is None:
         args = sys.argv[1:]
     parsed_args = parser.parse_args(args)
+
+    # Eagerly validate file paths provided via arguments
+    if parsed_args.msg_file and not os.path.exists(parsed_args.msg_file):
+        parser.error(f"Message file not found: {parsed_args.msg_file}")
+    if parsed_args.custom_tools and not os.path.exists(parsed_args.custom_tools):
+        parser.error(f"Custom tools file not found: {parsed_args.custom_tools}")
+    if parsed_args.mcp_use_config and not os.path.exists(parsed_args.mcp_use_config):
+        parser.error(f"MCP-Use config file not found: {parsed_args.mcp_use_config}")
+    if parsed_args.aider_config and not os.path.exists(parsed_args.aider_config):
+        parser.error(f"Aider config file not found: {parsed_args.aider_config}")
 
     # Validate message vs msg-file usage
     if parsed_args.message and parsed_args.msg_file:
@@ -906,51 +931,126 @@ def main():
                 config_repo.set(
                     "custom_tools_enabled", True if args.custom_tools else False
                 )
-                # Handle MCP-Use config
-                mcp_use_config_path = args.mcp_use_config
-                load_default_context7 = not args.no_context7
+                # Handle MCP-Use config loading and filtering
+                user_mcp_config_path = args.mcp_use_config # User-specified path
+                disabled_defaults = args.disable_default_mcp # List of defaults to disable, or None
+                final_mcp_config_source = None # Will be dict or path string
+                mcp_enabled = False
 
-                if mcp_use_config_path and load_default_context7:
-                    logger.warning(
-                        "--mcp-use-config is provided, ignoring default Context7 integration. "
-                        "Use --no-context7 if you only want the specified config."
+                # Determine if we should attempt to load the default config
+                should_load_defaults = True
+                if user_mcp_config_path and disabled_defaults is None:
+                    # Case 1: User specified a config, didn't touch --disable-default-mcp.
+                    # Load ONLY the user's config.
+                    logger.info(
+                        f"--mcp-use-config ('{user_mcp_config_path}') provided without --disable-default-mcp. "
+                        "Loading only the specified config."
                     )
-                    load_default_context7 = False # Explicit config takes precedence
+                    should_load_defaults = False
+                    final_mcp_config_source = user_mcp_config_path
+                # Else (Case 2: No user config OR --disable-default-mcp was used): 
+                # We will potentially load defaults (and maybe merge user config later).
+                
+                default_config_dict = {}
+                if should_load_defaults:
+                    try:
+                        default_mcp_config_path_obj = pkg_resources.files("ra_aid").joinpath("examples/default_mcp_servers.json")
+                        if default_mcp_config_path_obj.is_file():
+                            default_config_file_path = str(default_mcp_config_path_obj)
+                            logger.info(f"Loading default MCP server config: {default_config_file_path}")
+                            with open(default_config_file_path, 'r') as f:
+                                default_config_dict = json.load(f)
 
-                if load_default_context7:
-                    # Construct the path relative to the script's location
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    default_context7_path = os.path.join(script_dir, "..", "examples", "context7.json")
-                    if os.path.exists(default_context7_path):
-                        mcp_use_config_path = default_context7_path
-                        logger.info(f"Using default Context7 config: {mcp_use_config_path}")
-                    else:
-                        logger.error(f"Default Context7 config not found at {default_context7_path}. Context7 will be disabled. Ensure the file exists or provide a config via --mcp-use-config.")
-                        mcp_use_config_path = None
+                            # Filter based on --disable-default-mcp list
+                            if isinstance(disabled_defaults, list):
+                                if not disabled_defaults: # Empty list means disable all
+                                    logger.info("--disable-default-mcp used with no arguments. Disabling all default MCP servers.")
+                                    default_config_dict["mcpServers"] = {}
+                                else:
+                                    servers_to_keep = {}
+                                    disabled_set = set(disabled_defaults)
+                                    logger.info(f"Disabling default MCP servers specified by flag: {disabled_set}")
+                                    for name, config in default_config_dict.get("mcpServers", {}).items():
+                                        if name not in disabled_set:
+                                            servers_to_keep[name] = config
+                                    default_config_dict["mcpServers"] = servers_to_keep
+                        else:
+                            logger.error("Default MCP server config not found within package data.")
+                    except (ImportError, FileNotFoundError, NotADirectoryError, json.JSONDecodeError) as e:
+                        logger.error(f"Error loading or processing default MCP config: {e}. Proceeding without defaults.")
+                        default_config_dict = {} # Ensure it's empty on error
 
-                if mcp_use_config_path:
-                    config_repo.set("mcp_use_config", mcp_use_config_path)
-                    config_repo.set("mcp_use_enabled", True)
+                # Now, determine the final config source (path or merged dict)
+                if user_mcp_config_path and should_load_defaults:
+                    # Case 2a: Merge user config with (potentially filtered) defaults
+                    try:
+                        with open(user_mcp_config_path, 'r') as f:
+                            user_config_dict = json.load(f)
+                        merged_servers = default_config_dict.get("mcpServers", {})
+                        merged_servers.update(user_config_dict.get("mcpServers", {}))
+                        final_mcp_config_source = {"mcpServers": merged_servers}
+                        logger.info(f"Merged user MCP config '{user_mcp_config_path}' with loaded defaults.")
+                    except (FileNotFoundError, json.JSONDecodeError) as e:
+                        logger.error(f"Error loading user-specified MCP config '{user_mcp_config_path}': {e}. Using only defaults (if any).", exc_info=True)
+                        final_mcp_config_source = default_config_dict # Fallback to defaults
+                elif user_mcp_config_path: # Case 1: Only user config (defaults were skipped)
+                    final_mcp_config_source = user_mcp_config_path
+                elif should_load_defaults: # Case 2b: Only defaults (filtered or not)
+                    final_mcp_config_source = default_config_dict
+                # Else: No user config, no defaults loaded -> final_mcp_config_source remains None
+
+                # Set config repo based on the final source
+                if final_mcp_config_source and (isinstance(final_mcp_config_source, str) or final_mcp_config_source.get("mcpServers")):
+                    config_repo.set("mcp_use_config", final_mcp_config_source) # Store dict or path
+                    mcp_enabled = True
                 else:
-                    config_repo.set("mcp_use_enabled", False)
+                    logger.info("No MCP servers configured or enabled.")
+                    mcp_enabled = False
+                
+                config_repo.set("mcp_use_enabled", mcp_enabled)
 
                 config_repo.set("cowboy_mode", args.cowboy_mode) # Also add here for non-server mode
 
+
                 # Initialize and register MCP-Use client for cleanup if enabled
-                mcp_use_client_instance = None
+                mcp_use_client_instance: Optional["MCPUseClientSync"] = None
+                active_mcp_servers = [] # Default to empty list
                 if config_repo.get("mcp_use_enabled", False):
                     try:
                         mcp_use_config = config_repo.get("mcp_use_config")
-                        # Import here to avoid circular dependency issues
                         from ra_aid.utils.mcp_use_client import MCPUseClientSync 
+                        logger.info(f"Attempting to initialize MCP-Use client...")
                         mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
-                        # Register cleanup function
                         atexit.register(mcp_use_client_instance.close)
-                        logger.info("MCP-Use client initialized and cleanup registered.")
+                        active_mcp_servers = mcp_use_client_instance.get_active_server_names()
+                        logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
                     except Exception as e:
-                        logger.error(f"Failed to initialize MCP-Use client: {e}")
-                        # Ensure it's disabled if init fails
-                        config_repo.set("mcp_use_enabled", False) 
+                        logger.error(f"MCP-Use client initialization failed: {e}")
+                        logger.warning("MCP-Use integration will be disabled for this run.")
+                        # Ensure flags reflect the failure
+                        config_repo.set("mcp_use_enabled", False)
+                        mcp_enabled = False # Update local var too
+                        active_mcp_servers = []
+                        mcp_use_client_instance = None
+                
+                config_repo.set("active_mcp_servers", active_mcp_servers) # Store active servers
+
+                # Determine if Task Master planning integration should be enabled
+                task_master_active = "taskmaster-ai" in active_mcp_servers
+                task_master_planning_enabled = task_master_active and not args.disable_task_master_planning
+                config_repo.set("task_master_planning_enabled", task_master_planning_enabled)
+                logger.info(f"Task Master planning integration enabled: {task_master_planning_enabled}")
+
+                # Check for required API keys if Task Master planning is enabled
+                if task_master_planning_enabled:
+                    if not os.getenv("ANTHROPIC_API_KEY"):
+                        logger.warning("Task Master planning is enabled, but ANTHROPIC_API_KEY environment variable is not set. Task Master tools requiring it may fail.")
+
+
+                # Check for GitHub token if GitHub MCP server might be active
+                if "github" in active_mcp_servers:
+                     if not os.getenv("GITHUB_TOKEN"):
+                          logger.warning("GitHub MCP server is active, but GITHUB_TOKEN environment variable is not set. GitHub tools will likely fail.")
 
                 # Validate custom tools function signatures (this will now load MCP tools via the instance if available)
                 get_custom_tools(mcp_use_client=mcp_use_client_instance)

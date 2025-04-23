@@ -111,8 +111,7 @@ If you find this is an empty directory, you can stop research immediately and as
 {expert_section}
 {human_section}
 {web_research_section}
-    Context7 Tool Guidance:
-        If the task involves understanding or using specific libraries, frameworks, or APIs (e.g., React, Next.js, pandas, AWS SDK, Stripe API), **strongly prioritize** using the `resolve-library-id` and `get-library-docs` tools (if available) to fetch the most current documentation and examples *before* relying solely on your internal knowledge or web searches. Outdated information can lead to errors. Clearly state which library you are fetching documentation for when using these tools.
+{mcp_guidance}
 
 {custom_tools_section}
 
