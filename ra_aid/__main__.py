@@ -83,6 +83,8 @@ from ra_aid.server.server import app as fastapi_app
 from ra_aid.tool_configs import get_chat_tools, set_modification_tools, get_custom_tools
 from ra_aid.tools.human import ask_human
 
+import importlib.resources as pkg_resources
+
 import atexit
 
 logger = get_logger(__name__)
@@ -512,10 +514,26 @@ Examples:
         action="store_true",
         help="Disable the default MCP server integrations (Context7, Task Master)",
     )
+    parser.add_argument(
+        "--disable-task-master-planning",
+        action="store_true",
+        help="Force RA.Aid to use its internal planner instead of Task Master tools, even if Task Master MCP is available.",
+    )
+
 
     if args is None:
         args = sys.argv[1:]
     parsed_args = parser.parse_args(args)
+
+    # Eagerly validate file paths provided via arguments
+    if parsed_args.msg_file and not os.path.exists(parsed_args.msg_file):
+        parser.error(f"Message file not found: {parsed_args.msg_file}")
+    if parsed_args.custom_tools and not os.path.exists(parsed_args.custom_tools):
+        parser.error(f"Custom tools file not found: {parsed_args.custom_tools}")
+    if parsed_args.mcp_use_config and not os.path.exists(parsed_args.mcp_use_config):
+        parser.error(f"MCP-Use config file not found: {parsed_args.mcp_use_config}")
+    if parsed_args.aider_config and not os.path.exists(parsed_args.aider_config):
+        parser.error(f"Aider config file not found: {parsed_args.aider_config}")
 
     # Validate message vs msg-file usage
     if parsed_args.message and parsed_args.msg_file:
@@ -918,15 +936,18 @@ def main():
                     load_default_mcp = False # Explicit config takes precedence
 
                 if load_default_mcp:
-                    # Construct the path relative to the script's location
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    default_mcp_config_path = os.path.join(script_dir, "..", "examples", "default_mcp_servers.json")
-                    if os.path.exists(default_mcp_config_path):
-                        mcp_use_config_path = default_mcp_config_path
-                        logger.info(f"Using default MCP server config: {mcp_use_config_path}")
-                    else:
-                        logger.error(f"Default MCP server config not found at {default_mcp_config_path}. MCP tools will be disabled. Ensure the file exists or provide a config via --mcp-use-config.")
-                        mcp_use_config_path = None
+                    # Use importlib.resources to safely access package data
+                    try:
+                        default_mcp_config_path_obj = pkg_resources.files("ra_aid").joinpath("examples/default_mcp_servers.json")
+                        if default_mcp_config_path_obj.is_file():
+                             mcp_use_config_path = str(default_mcp_config_path_obj)
+                             logger.info(f"Using default MCP server config: {mcp_use_config_path}")
+                        else:
+                             logger.error(f"Default MCP server config not found within package data. MCP tools will be disabled.")
+                             mcp_use_config_path = None
+                    except (ImportError, FileNotFoundError, NotADirectoryError) as e:
+                         logger.error(f"Error accessing default MCP config via package resources: {e}. MCP tools will be disabled.")
+                         mcp_use_config_path = None
 
                 if mcp_use_config_path:
                     config_repo.set("mcp_use_config", mcp_use_config_path)
@@ -938,19 +959,29 @@ def main():
 
                 # Initialize and register MCP-Use client for cleanup if enabled
                 mcp_use_client_instance = None
+                # Determine if Task Master planning integration should be enabled
+                # Requires MCP tools to be enabled AND the disable flag NOT set
+                task_master_planning_enabled = config_repo.get("mcp_use_enabled", False) and not args.disable_task_master_planning
+                config_repo.set("task_master_planning_enabled", task_master_planning_enabled)
+                logger.info(f"Task Master planning integration enabled: {task_master_planning_enabled}")
+
                 if config_repo.get("mcp_use_enabled", False):
                     try:
                         mcp_use_config = config_repo.get("mcp_use_config")
                         # Import here to avoid circular dependency issues
                         from ra_aid.utils.mcp_use_client import MCPUseClientSync 
+                        logger.info(f"Attempting to initialize MCP-Use client with config: {mcp_use_config}")
                         mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
-                        # Register cleanup function
+                        # Register cleanup function only if initialization succeeds
                         atexit.register(mcp_use_client_instance.close)
-                        logger.info("MCP-Use client initialized and cleanup registered.")
+                        logger.info("MCP-Use client initialized successfully and cleanup registered.")
                     except Exception as e:
-                        logger.error(f"Failed to initialize MCP-Use client: {e}")
+                        logger.error(f"Failed to initialize MCP-Use client or connect to its servers: {e}")
+                        logger.warning("Disabling MCP-Use integration for this run due to initialization error.")
                         # Ensure it's disabled if init fails
                         config_repo.set("mcp_use_enabled", False) 
+                        config_repo.set("task_master_planning_enabled", False) # Also disable TM planning
+                        mcp_use_client_instance = None # Ensure instance is None
 
                 # Validate custom tools function signatures (this will now load MCP tools via the instance if available)
                 get_custom_tools(mcp_use_client=mcp_use_client_instance)

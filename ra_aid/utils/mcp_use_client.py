@@ -1,5 +1,8 @@
 import asyncio
 import threading
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import Any, List
 
 from langchain_core.tools import BaseTool
@@ -30,11 +33,14 @@ class MCPUseClientSync:
                     compatible with ``MCPClient``.
         """
         self.loop = asyncio.new_event_loop()
+        self._loop_started = threading.Event()
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
+        self._loop_started.wait() # Wait for loop to be running
 
         self._client: MCPClient | None = None
         self._tools: List[BaseTool] = []
+        self._closed = False
 
         fut = asyncio.run_coroutine_threadsafe(
             self._setup_client(config), self.loop
@@ -49,22 +55,48 @@ class MCPUseClientSync:
         return self._tools
 
     def close(self) -> None:
-        """Close all MCP sessions and stop the event-loop."""
-        if self._client is not None:
-            fut = asyncio.run_coroutine_threadsafe(
-                self._client.close_all_sessions(), self.loop
-            )
-            fut.result()
+        """Close all MCP sessions and stop the event-loop. Idempotent."""
+        if getattr(self, "_closed", False):
+            return # Already closed
 
-        self.loop.call_soon_threadsafe(self.loop.stop)
-        self.thread.join(timeout=5)
+        logger.debug("Closing MCPUseClientSync...")
+        if self._client is not None:
+            try:
+                # Ensure the loop is running before scheduling
+                if self.loop.is_running():
+                    fut = asyncio.run_coroutine_threadsafe(
+                        self._client.close_all_sessions(), self.loop
+                    )
+                    # Wait with a timeout, but don't block indefinitely if loop is stuck
+                    fut.result(timeout=10) 
+                else:
+                    logger.warning("MCP client loop not running during close.")
+            except asyncio.TimeoutError:
+                logger.error("Timeout waiting for MCP client sessions to close.")
+            except Exception as e:
+                logger.error(f"Error closing MCP client sessions: {e}")
+
+        if self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)
+        
+        self.thread.join() # Wait for thread to finish
+        if self.thread.is_alive():
+             logger.warning("MCP client background thread did not exit cleanly.")
+
+        self._closed = True
+        logger.debug("MCPUseClientSync closed.")
 
     # ------------------------------------------------------------------
     # internal
     # ------------------------------------------------------------------
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
+        self._loop_started.set() # Signal that the loop is ready
+        try:
+            self.loop.run_forever()
+        finally:
+            self.loop.close()
+            logger.debug("MCP client event loop closed.")
 
     async def _setup_client(self, config: str | dict[str, Any]):
         if isinstance(config, str):

@@ -336,6 +336,18 @@ def run_planning_agent(
 {expert_guidance}
 </expert guidance>"""
 
+    # Conditionally add Task Master guidance
+    task_master_guidance = ""
+    if get_config_repository().get("task_master_planning_enabled", False):
+        task_master_guidance = """
+    Task Master Integration:
+        Task Master tools are available. Before generating a new plan, check if a `tasks.json` file exists. 
+        If it does, use `task-master list` and `task-master show` to understand the existing plan and align with it.
+        If the user provided a PRD file path, prioritize using `task-master parse-prd <filepath>` to generate the initial task list.
+        When generating or refining complex steps, consider using `task-master expand --id=<task_id>`.
+        After a task implementation is successfully completed by the implementation agent, you MUST call `task-master set-status --id=<task_id> --status=done` to keep the Task Master state synchronized.
+        """
+
     planning_prompt = PLANNING_PROMPT.format(
         current_date=current_date,
         working_directory=working_directory,
@@ -343,6 +355,7 @@ def run_planning_agent(
         human_section=human_section,
         web_research_section=web_research_section,
         custom_tools_section=custom_tools_section,
+        task_master_guidance=task_master_guidance, # Add Task Master guidance here
         base_task=base_task,
         project_info=formatted_project_info,
         research_notes=formatted_research_notes,
