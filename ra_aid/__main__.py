@@ -739,6 +739,7 @@ def build_status():
     )
     web_research_enabled = config_repo.get("web_research_enabled", False)
     custom_tools_enabled = config_repo.get("custom_tools_enabled", False)
+    active_mcp_servers = config_repo.get("active_mcp_servers", [])
 
     # Get the expert enabled status
     expert_enabled = bool(expert_provider and expert_model)
@@ -774,6 +775,12 @@ def build_status():
             "Enabled" if custom_tools_enabled else "Disabled",
             style=None if custom_tools_enabled else "italic",
         )
+        status.append("\n")
+        
+    # MCP servers status
+    if active_mcp_servers:
+        status.append("🔌 MCP Servers: ")
+        status.append(", ".join(active_mcp_servers))
         status.append("\n")
 
     # Fallback handler status
