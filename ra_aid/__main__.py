@@ -1205,16 +1205,16 @@ def main():
                 
                 default_config_dict = {}
                 if should_load_defaults:
-                    logger.debug("Attempting to load default MCP config...") # <-- ADDED
+                    logger.debug("Attempting to load default MCP config...")
                     try:
-                        default_mcp_config_path_obj = pkg_resources.files("ra_aid").joinpath("examples/default_mcp_servers.json")
-                        logger.debug(f"Default config path object: {default_mcp_config_path_obj}") # <-- ADDED
-                        if default_mcp_config_path_obj.is_file():
-                            default_config_file_path = str(default_mcp_config_path_obj)
+                        # Corrected path relative to project root
+                        default_config_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../examples/default_mcp_servers.json')) 
+                        logger.debug(f"Looking for default config at: {default_config_file_path}")
+                        if os.path.isfile(default_config_file_path):
                             logger.info(f"Loading default MCP server config: {default_config_file_path}")
                             with open(default_config_file_path, 'r') as f:
                                 default_config_dict = json.load(f)
-                            logger.debug(f"Default config loaded: {list(default_config_dict.get('mcpServers', {}).keys())}") # <-- ADDED
+                            logger.debug(f"Default config loaded: {list(default_config_dict.get('mcpServers', {}).keys())}")
 
                             # Filter based on --disable-default-mcp list
                             if isinstance(disabled_defaults, list):
