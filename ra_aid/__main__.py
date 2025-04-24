@@ -830,7 +830,7 @@ def build_status():
     return status
 
 
-def process_task(args):
+def process_task(args, mcp_use_client_instance=None):
     """Process a single task with the given arguments."""
     # This function will contain the core task processing logic
     # that was previously in main()
@@ -864,22 +864,6 @@ def process_task(args):
     config_repo.set("test_cmd_timeout", args.test_cmd_timeout)
     config_repo.set("max_test_cmd_retries", args.max_test_cmd_retries)
     
-    # Initialize MCP-Use integration if enabled
-    mcp_use_client_instance = None
-    if hasattr(args, 'mcp_use_config') and args.mcp_use_config:
-        try:
-            from ra_aid.utils.mcp_use_client import MCPUseClientSync
-            logger.info("Attempting to initialize MCP-Use client...")
-            mcp_use_client_instance = MCPUseClientSync(args.mcp_use_config)
-            active_mcp_servers = mcp_use_client_instance.get_active_server_names()
-            logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
-            config_repo.set("mcp_use_enabled", True)
-            config_repo.set("active_mcp_servers", active_mcp_servers)
-        except Exception as e:
-            logger.error(f"MCP-Use client initialization failed: {e}")
-            logger.warning("MCP-Use integration will be disabled for this run.")
-            config_repo.set("mcp_use_enabled", False)
-            config_repo.set("active_mcp_servers", [])
     
     # Validate message is provided
     if not args.message:
@@ -963,7 +947,7 @@ def process_task(args):
         except Exception as e:
             logger.error(f"Error closing MCP-Use client: {e}")
 
-def run_interactive_mode(args):
+def run_interactive_mode(args, mcp_use_client_instance=None):
     """Run RA.Aid in interactive mode with a command prompt."""
     display_welcome_message()
     
@@ -981,7 +965,7 @@ def run_interactive_mode(args):
                 if not user_input:
                     continue
                 args.message = user_input
-                process_task(args)
+                process_task(args, mcp_use_client_instance)
                 
                 # Show status after each task
                 console.print(Panel(build_status(), title="Status", border_style="blue"))
@@ -1068,13 +1052,13 @@ def main():
 
                 # Process initial task if provided
                 if not start_interactive:
-                    process_task(args)
+                    process_task(args, mcp_use_client_instance)
                     # Show status after initial task
                     console.print(Panel(build_status(), title="Status", border_style="blue"))
 
                 # Enter interactive mode if requested or after initial task
                 if start_interactive or (not args.server and not args.chat):
-                    run_interactive_mode(args)
+                    run_interactive_mode(args, mcp_use_client_instance)
                 logger.debug("Initialized SessionRepository")
                 logger.debug("Initialized KeyFactRepository")
                 logger.debug("Initialized KeySnippetRepository")
