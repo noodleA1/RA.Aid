@@ -97,7 +97,7 @@ What sets RA.Aid apart is its ability to handle complex programming tasks that e
   - Memory management
   - Research and planning tools
   - Code analysis capabilities
-- **Interactive CLI Interface**: Simple yet powerful command-line interface with continuous interactive mode for seamless multi-task workflows
+- **Interactive CLI**: Simple yet powerful command-line interface with continuous interactive mode for seamless multitask workflows
 - **Persistent Memory**: Maintain context and memory between tasks in interactive mode for continuous development sessions
 - **Modular Design**: Structured as a Python package with specialized modules for console output, processing, text utilities, and tools
 - **Git Integration**: Built-in support for Git operations and repository management

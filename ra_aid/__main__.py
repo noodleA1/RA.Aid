@@ -85,7 +85,13 @@ from ra_aid.prompts.chat_prompts import CHAT_PROMPT
 from ra_aid.prompts.web_research_prompts import WEB_RESEARCH_PROMPT_SECTION_CHAT
 from ra_aid.prompts.custom_tools_prompts import DEFAULT_CUSTOM_TOOLS_PROMPT
 from ra_aid.server.server import app as fastapi_app
-from ra_aid.tool_configs import get_chat_tools, set_modification_tools, get_custom_tools
+from ra_aid.tool_configs import (
+    get_chat_tools,
+    set_modification_tools,
+    get_custom_tools,
+    get_planning_tools,
+    get_implementation_tools,
+)
 from ra_aid.tools.human import ask_human
 
 import importlib.resources as pkg_resources
@@ -821,8 +827,13 @@ def process_task(args):
     config_repo.set("expert_provider", args.expert_provider)
     config_repo.set("expert_model", args.expert_model)
     config_repo.set("research_only", args.research_only)
-    config_repo.set("web_research_enabled", args.web_research)
-    config_repo.set("search_enabled", args.search)
+    
+    # Safely set web_research and search flags
+    web_research_enabled = getattr(args, 'web_research', False)
+    search_enabled = getattr(args, 'search', False)
+    config_repo.set("web_research_enabled", web_research_enabled)
+    config_repo.set("search_enabled", search_enabled)
+    
     config_repo.set("hil", args.hil)
     config_repo.set("test_cmd_timeout", args.test_cmd_timeout)
     config_repo.set("max_test_cmd_retries", args.max_test_cmd_retries)
@@ -832,7 +843,7 @@ def process_task(args):
     if hasattr(args, 'mcp_use_config') and args.mcp_use_config:
         try:
             from ra_aid.utils.mcp_use_client import MCPUseClientSync
-            logger.info(f"Attempting to initialize MCP-Use client...")
+            logger.info("Attempting to initialize MCP-Use client...")
             mcp_use_client_instance = MCPUseClientSync(args.mcp_use_config)
             active_mcp_servers = mcp_use_client_instance.get_active_server_names()
             logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
@@ -852,20 +863,21 @@ def process_task(args):
     
     # Store the human input in the database
     human_input_repo = get_human_input_repository()
-    human_input_id = human_input_repo.create(args.message)
+    human_input_repo.create(args.message)
     
     # Run the appropriate agent based on the arguments
     if args.research_only:
         # Run research agent
+        research_model = initialize_llm(
+            args.provider, args.model or DEFAULT_MODEL, temperature=args.temperature
+        )
         run_research_agent(
             args.message,
-            provider=args.provider,
-            model=args.model or DEFAULT_MODEL,
-            temperature=args.temperature,
-            web_research=args.web_research,
-            search=args.search,
-            research_only=args.research_only,
+            research_model,
+            expert_enabled=False,
+            research_only=True,
             hil=args.hil,
+            web_research_enabled=config_repo.get("web_research_enabled", False),
             memory=research_memory,
         )
     else:
@@ -888,8 +900,8 @@ def process_task(args):
         planning_agent = create_agent(
             llm,
             get_planning_tools(
-                web_research=args.web_research,
-                search=args.search,
+                web_research=web_research_enabled,
+                search=search_enabled,
                 expert_llm=expert_llm,
                 custom_tools=custom_tools,
             ),
@@ -907,8 +919,8 @@ def process_task(args):
         implementation_agent = create_agent(
             llm,
             get_implementation_tools(
-                web_research=args.web_research,
-                search=args.search,
+                web_research=web_research_enabled,
+                search=search_enabled,
                 expert_llm=expert_llm,
                 test_cmd_timeout=args.test_cmd_timeout,
                 max_test_cmd_retries=args.max_test_cmd_retries,
@@ -929,6 +941,32 @@ def process_task(args):
             mcp_use_client_instance.close()
         except Exception as e:
             logger.error(f"Error closing MCP-Use client: {e}")
+
+def run_interactive_mode(args):
+    """Run RA.Aid in interactive mode with a command prompt."""
+    display_welcome_message()
+    
+    try:
+        while True:
+            try:
+                user_input = input("RA.Aid> ").strip()
+                if not user_input:
+                    continue
+                args.message = user_input
+                process_task(args)
+                
+                # Show status after each task
+                console.print(Panel(build_status(), title="Status", border_style="blue"))
+                
+                # Clear message for next iteration
+                args.message = None
+            except (EOFError, KeyboardInterrupt):
+                print("\n👋 Goodbye!")
+                sys.exit(0)
+    except Exception as e:
+        logger.error(f"Error in interactive mode: {e}")
+        print_error(f"Error: {str(e)}")
+        sys.exit(1)
 
 def main():
     """Main entry point for the ra-aid command line tool."""
@@ -1373,30 +1411,7 @@ def main():
                     not args.message and not args.wipe_project_memory
                 ):  # Add check for wipe_project_memory flag
                     # Instead of showing an error, enter interactive mode
-                    display_welcome_message()
-                    
-                    # Enter interactive loop
-                    try:
-                        while True:
-                            try:
-                                user_input = input("RA.Aid> ").strip()
-                                if not user_input:
-                                    continue
-                                args.message = user_input
-                                process_task(args)
-                                
-                                # Show status after each task
-                                console.print(Panel(build_status(), title="Status", border_style="blue"))
-                                
-                                # Clear message for next iteration
-                                args.message = None
-                            except (EOFError, KeyboardInterrupt):
-                                print("\n👋 Goodbye!")
-                                sys.exit(0)
-                    except Exception as e:
-                        logger.error(f"Error in interactive mode: {e}")
-                        print_error(f"Error: {str(e)}")
-                        sys.exit(1)
+                    run_interactive_mode(args)
 
                 if args.message:  # Only set base_task if message exists
                     base_task = args.message
@@ -1512,24 +1527,8 @@ def main():
                     # Show status after task completion
                     console.print(Panel(build_status(), title="Status", border_style="blue"))
                     
-                    # Enter interactive loop
-                    try:
-                        while True:
-                            try:
-                                user_input = input("RA.Aid> ").strip()
-                                if not user_input:
-                                    continue
-                                args.message = user_input
-                                process_task(args)
-                                
-                                # Show status after each task
-                                console.print(Panel(build_status(), title="Status", border_style="blue"))
-                            except (EOFError, KeyboardInterrupt):
-                                print("\n👋 Goodbye!")
-                                break
-                    except Exception as e:
-                        logger.error(f"Error in interactive mode: {e}")
-                        print_error(f"Error: {str(e)}")
+                    # Enter interactive mode
+                    run_interactive_mode(args)
 
     except (KeyboardInterrupt, AgentInterrupt):
         print()
