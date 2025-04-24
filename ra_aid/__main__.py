@@ -951,14 +951,14 @@ def run_interactive_mode(args, mcp_use_client_instance=None):
     """Run RA.Aid in interactive mode with a command prompt."""
     display_welcome_message()
     
-    # Ensure config repository is initialized
-    try:
-        from ra_aid.database.repositories.config_repository import ConfigRepositoryManager
-        ConfigRepositoryManager.initialize()
-    except Exception as e:
-        logger.debug(f"Error initializing config repository: {e}")
+    # Config repository should already be initialized by main()
+    # try:
+    #     from ra_aid.database.repositories.config_repository import ConfigRepositoryManager
+    #     ConfigRepositoryManager.initialize()
+    # except Exception as e:
+    #     logger.debug(f"Error initializing config repository: {e}")
         
-    # --- NEW: Display initial status ---    
+    # --- Display initial status ---    
     try:
         console.print(Panel(build_status(), title="Status", border_style="blue"))
     except Exception as e:
