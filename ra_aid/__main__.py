@@ -927,10 +927,8 @@ def process_task(args):
         planning_agent = create_agent(
             llm,
             get_planning_tools(
-                web_research=web_research_enabled,
-                search=search_enabled,
-                expert_llm=expert_llm,
-                custom_tools=custom_tools,
+                expert_enabled=bool(expert_llm),
+                web_research_enabled=web_research_enabled,
             ),
             checkpointer=planning_memory,
             agent_type="planning",
@@ -946,12 +944,8 @@ def process_task(args):
         implementation_agent = create_agent(
             llm,
             get_implementation_tools(
-                web_research=web_research_enabled,
-                search=search_enabled,
-                expert_llm=expert_llm,
-                test_cmd_timeout=args.test_cmd_timeout,
-                max_test_cmd_retries=args.max_test_cmd_retries,
-                custom_tools=custom_tools,
+                expert_enabled=bool(expert_llm),
+                web_research_enabled=web_research_enabled,
             ),
             checkpointer=implementation_memory,
             agent_type="implementation",
