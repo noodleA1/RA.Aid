@@ -550,13 +550,13 @@ Examples:
     parsed_args = parser.parse_args(args)
 
     # Eagerly validate file paths provided via arguments
-    if parsed_args.msg_file and not os.path.exists(parsed_args.msg_file):
+    if parsed_args.msg_file and not os.path.isfile(parsed_args.msg_file):
         parser.error(f"Message file not found: {parsed_args.msg_file}")
-    if parsed_args.custom_tools and not os.path.exists(parsed_args.custom_tools):
+    if parsed_args.custom_tools and not os.path.isfile(parsed_args.custom_tools):
         parser.error(f"Custom tools file not found: {parsed_args.custom_tools}")
-    if parsed_args.mcp_use_config and not os.path.exists(parsed_args.mcp_use_config):
+    if parsed_args.mcp_use_config and not os.path.isfile(parsed_args.mcp_use_config):
         parser.error(f"MCP-Use config file not found: {parsed_args.mcp_use_config}")
-    if parsed_args.aider_config and not os.path.exists(parsed_args.aider_config):
+    if parsed_args.aider_config and not os.path.isfile(parsed_args.aider_config):
         parser.error(f"Aider config file not found: {parsed_args.aider_config}")
 
     # Validate message vs msg-file usage
@@ -1068,6 +1068,19 @@ def main():
                 EnvInvManager(env_data) as env_inv,
             ):
                 # This initializes all repositories and makes them available via their respective get methods
+
+                # Determine if we should start in interactive mode
+                start_interactive = not args.message and not args.msg_file and not args.server and not args.chat
+
+                # Process initial task if provided
+                if not start_interactive:
+                    process_task(args)
+                    # Show status after initial task
+                    console.print(Panel(build_status(), title="Status", border_style="blue"))
+
+                # Enter interactive mode if requested or after initial task
+                if start_interactive or (not args.server and not args.chat):
+                    run_interactive_mode(args)
                 logger.debug("Initialized SessionRepository")
                 logger.debug("Initialized KeyFactRepository")
                 logger.debug("Initialized KeySnippetRepository")
@@ -1439,11 +1452,12 @@ def main():
                     return
 
                 # Validate message is provided
-                if (
-                    not args.message and not args.wipe_project_memory
-                ):  # Add check for wipe_project_memory flag
-                    # Instead of showing an error, set a flag to enter interactive mode later
-                    args.enter_interactive_mode = True
+                # (This check is no longer needed as interactive mode is handled within the main with block)
+                # if (
+                #     not args.message and not args.wipe_project_memory
+                # ):  # Add check for wipe_project_memory flag
+                #     # Instead of showing an error, set a flag to enter interactive mode later
+                #     args.enter_interactive_mode = True
 
                 # Initialize base_task with a default value
                 base_task = ""
@@ -1553,26 +1567,23 @@ def main():
                 # for how long have we had a second planning agent triggered here?
 
                 # After task completion in normal mode, set flag to enter interactive mode
-                if not args.server and not args.chat:
-                    # Clear message args to prompt for next task
-                    args.message = None
-                    args.msg_file = None
-                    
-                    # Show status after task completion
-                    console.print(Panel(build_status(), title="Status", border_style="blue"))
-                    
-                    # Set flag to enter interactive mode after completing the current task
-                    args.enter_interactive_mode = True
+                # (This logic is now handled within the main with block)
+                # if not args.server and not args.chat:
+                #     # Clear message args to prompt for next task
+                #     args.message = None
+                #     args.msg_file = None
+                #     
+                #     # Show status after task completion
+                #     console.print(Panel(build_status(), title="Status", border_style="blue"))
+                #     
+                #     # Set flag to enter interactive mode after completing the current task
+                #     args.enter_interactive_mode = True
 
     except (KeyboardInterrupt, AgentInterrupt):
         print()
         print(" 👋 Bye!")
         print()
         sys.exit(0)
-        
-    # Enter interactive mode if flag is set
-    if getattr(args, 'enter_interactive_mode', False):
-        run_interactive_mode(args)
 
 
 if __name__ == "__main__":
