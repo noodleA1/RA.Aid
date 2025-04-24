@@ -1180,10 +1180,13 @@ def main():
                     "custom_tools_enabled", True if args.custom_tools else False
                 )
                 # Handle MCP-Use config loading and filtering
+                logger.debug("Starting MCP config determination...") # <-- ADDED
                 user_mcp_config_path = args.mcp_use_config # User-specified path
                 disabled_defaults = args.disable_default_mcp # List of defaults to disable, or None
                 final_mcp_config_source = None # Will be dict or path string
                 mcp_enabled = False
+                logger.debug(f"User MCP config path: {user_mcp_config_path}") # <-- ADDED
+                logger.debug(f"Disabled defaults: {disabled_defaults}") # <-- ADDED
 
                 # Determine if we should attempt to load the default config
                 should_load_defaults = True
@@ -1198,19 +1201,24 @@ def main():
                     final_mcp_config_source = user_mcp_config_path
                 # Else (Case 2: No user config OR --disable-default-mcp was used): 
                 # We will potentially load defaults (and maybe merge user config later).
+                logger.debug(f"Should load default MCP config? {should_load_defaults}") # <-- ADDED
                 
                 default_config_dict = {}
                 if should_load_defaults:
+                    logger.debug("Attempting to load default MCP config...") # <-- ADDED
                     try:
                         default_mcp_config_path_obj = pkg_resources.files("ra_aid").joinpath("examples/default_mcp_servers.json")
+                        logger.debug(f"Default config path object: {default_mcp_config_path_obj}") # <-- ADDED
                         if default_mcp_config_path_obj.is_file():
                             default_config_file_path = str(default_mcp_config_path_obj)
                             logger.info(f"Loading default MCP server config: {default_config_file_path}")
                             with open(default_config_file_path, 'r') as f:
                                 default_config_dict = json.load(f)
+                            logger.debug(f"Default config loaded: {list(default_config_dict.get('mcpServers', {}).keys())}") # <-- ADDED
 
                             # Filter based on --disable-default-mcp list
                             if isinstance(disabled_defaults, list):
+                                logger.debug(f"Filtering default servers based on: {disabled_defaults}") # <-- ADDED
                                 if not disabled_defaults: # Empty list means disable all
                                     logger.info("--disable-default-mcp used with no arguments. Disabling all default MCP servers.")
                                     default_config_dict["mcpServers"] = {}
@@ -1222,15 +1230,19 @@ def main():
                                         if name not in disabled_set:
                                             servers_to_keep[name] = config
                                     default_config_dict["mcpServers"] = servers_to_keep
+                                    logger.debug(f"Filtered default config: {list(default_config_dict.get('mcpServers', {}).keys())}") # <-- ADDED
                         else:
-                            logger.error("Default MCP server config not found within package data.")
+                            logger.warning("Default MCP config file not found.") # <-- ADDED
                     except (ImportError, FileNotFoundError, NotADirectoryError, json.JSONDecodeError) as e:
+                        logger.error(f"Error loading or parsing default MCP config: {e}", exc_info=True) # <-- ADDED exc_info
+                        default_config_dict = {} # Ensure it's empty on error
                         logger.error(f"Error loading or processing default MCP config: {e}. Proceeding without defaults.")
                         default_config_dict = {} # Ensure it's empty on error
 
                 # Now, determine the final config source (path or merged dict)
                 if user_mcp_config_path and should_load_defaults:
                     # Case 2a: Merge user config with (potentially filtered) defaults
+                    logger.debug("Merging user MCP config with filtered defaults...") # <-- ADDED
                     try:
                         with open(user_mcp_config_path, 'r') as f:
                             user_config_dict = json.load(f)
@@ -1238,6 +1250,7 @@ def main():
                         merged_servers.update(user_config_dict.get("mcpServers", {}))
                         final_mcp_config_source = {"mcpServers": merged_servers}
                         logger.info(f"Merged user MCP config '{user_mcp_config_path}' with loaded defaults.")
+                        logger.debug(f"Merged config: {list(final_mcp_config_source.get('mcpServers', {}).keys())}") # <-- ADDED
                     except (FileNotFoundError, json.JSONDecodeError) as e:
                         logger.error(f"Error loading user-specified MCP config '{user_mcp_config_path}': {e}. Using only defaults (if any).", exc_info=True)
                         final_mcp_config_source = default_config_dict # Fallback to defaults
@@ -1246,14 +1259,18 @@ def main():
                 elif should_load_defaults: # Case 2b: Only defaults (filtered or not)
                     final_mcp_config_source = default_config_dict
                 # Else: No user config, no defaults loaded -> final_mcp_config_source remains None
+                logger.debug(f"Final MCP config source type: {type(final_mcp_config_source)}") # <-- ADDED
+                logger.debug(f"Final MCP config source value (partial): {str(final_mcp_config_source)[:200]}...") # <-- ADDED
 
                 # Set config repo based on the final source
                 if final_mcp_config_source and (isinstance(final_mcp_config_source, str) or final_mcp_config_source.get("mcpServers")):
                     config_repo.set("mcp_use_config", final_mcp_config_source) # Store dict or path
                     mcp_enabled = True
+                    logger.debug("MCP config source found, setting mcp_use_enabled=True") # <-- ADDED
                 else:
                     logger.info("No MCP servers configured or enabled.")
                     mcp_enabled = False
+                    logger.debug("No valid MCP config source found, mcp_use_enabled=False") # <-- ADDED
                 
                 config_repo.set("mcp_use_enabled", mcp_enabled)
 
