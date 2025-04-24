@@ -550,13 +550,13 @@ Examples:
     parsed_args = parser.parse_args(args)
 
     # Eagerly validate file paths provided via arguments
-    if parsed_args.msg_file and not os.path.exists(parsed_args.msg_file):
+    if parsed_args.msg_file and not os.path.isfile(parsed_args.msg_file):
         parser.error(f"Message file not found: {parsed_args.msg_file}")
-    if parsed_args.custom_tools and not os.path.exists(parsed_args.custom_tools):
+    if parsed_args.custom_tools and not os.path.isfile(parsed_args.custom_tools):
         parser.error(f"Custom tools file not found: {parsed_args.custom_tools}")
-    if parsed_args.mcp_use_config and not os.path.exists(parsed_args.mcp_use_config):
+    if parsed_args.mcp_use_config and not os.path.isfile(parsed_args.mcp_use_config):
         parser.error(f"MCP-Use config file not found: {parsed_args.mcp_use_config}")
-    if parsed_args.aider_config and not os.path.exists(parsed_args.aider_config):
+    if parsed_args.aider_config and not os.path.isfile(parsed_args.aider_config):
         parser.error(f"Aider config file not found: {parsed_args.aider_config}")
 
     # Validate message vs msg-file usage
@@ -739,6 +739,7 @@ def build_status():
     )
     web_research_enabled = config_repo.get("web_research_enabled", False)
     custom_tools_enabled = config_repo.get("custom_tools_enabled", False)
+    active_mcp_servers = config_repo.get("active_mcp_servers", [])
 
     # Get the expert enabled status
     expert_enabled = bool(expert_provider and expert_model)
@@ -774,6 +775,12 @@ def build_status():
             "Enabled" if custom_tools_enabled else "Disabled",
             style=None if custom_tools_enabled else "italic",
         )
+        status.append("\n")
+        
+    # MCP servers status
+    if active_mcp_servers:
+        status.append("🔌 MCP Servers: ")
+        status.append(", ".join(active_mcp_servers))
         status.append("\n")
 
     # Fallback handler status
@@ -828,8 +835,16 @@ def process_task(args):
     # This function will contain the core task processing logic
     # that was previously in main()
     
-    # Create config repository for storing runtime configuration
-    config_repo = get_config_repository()
+    # Get or create config repository for storing runtime configuration
+    try:
+        # Try to get existing config repository
+        config_repo = get_config_repository()
+    except Exception as e:
+        # If it fails, initialize a new one
+        logger.debug(f"Config repository not found, initializing: {e}")
+        from ra_aid.database.repositories.config_repository import ConfigRepositoryManager
+        ConfigRepositoryManager.initialize()
+        config_repo = get_config_repository()
     
     # Store key arguments in config repository for access by tools
     config_repo.set("provider", args.provider)
@@ -958,6 +973,13 @@ def run_interactive_mode(args):
     """Run RA.Aid in interactive mode with a command prompt."""
     display_welcome_message()
     
+    # Ensure config repository is initialized
+    try:
+        from ra_aid.database.repositories.config_repository import ConfigRepositoryManager
+        ConfigRepositoryManager.initialize()
+    except Exception as e:
+        logger.debug(f"Error initializing config repository: {e}")
+    
     try:
         while True:
             try:
@@ -1046,6 +1068,19 @@ def main():
                 EnvInvManager(env_data) as env_inv,
             ):
                 # This initializes all repositories and makes them available via their respective get methods
+
+                # Determine if we should start in interactive mode
+                start_interactive = not args.message and not args.msg_file and not args.server and not args.chat
+
+                # Process initial task if provided
+                if not start_interactive:
+                    process_task(args)
+                    # Show status after initial task
+                    console.print(Panel(build_status(), title="Status", border_style="blue"))
+
+                # Enter interactive mode if requested or after initial task
+                if start_interactive or (not args.server and not args.chat):
+                    run_interactive_mode(args)
                 logger.debug("Initialized SessionRepository")
                 logger.debug("Initialized KeyFactRepository")
                 logger.debug("Initialized KeySnippetRepository")
@@ -1417,13 +1452,16 @@ def main():
                     return
 
                 # Validate message is provided
-                if (
-                    not args.message and not args.wipe_project_memory
-                ):  # Add check for wipe_project_memory flag
-                    # Instead of showing an error, set a flag to enter interactive mode later
-                    args.enter_interactive_mode = True
+                # (This check is no longer needed as interactive mode is handled within the main with block)
+                # if (
+                #     not args.message and not args.wipe_project_memory
+                # ):  # Add check for wipe_project_memory flag
+                #     # Instead of showing an error, set a flag to enter interactive mode later
+                #     args.enter_interactive_mode = True
 
-                if args.message:  # Only set base_task if message exists
+                # Initialize base_task with a default value
+                base_task = ""
+                if args.message:  # Set base_task if message exists
                     base_task = args.message
 
                 # Record CLI input in database
@@ -1529,26 +1567,23 @@ def main():
                 # for how long have we had a second planning agent triggered here?
 
                 # After task completion in normal mode, set flag to enter interactive mode
-                if not args.server and not args.chat:
-                    # Clear message args to prompt for next task
-                    args.message = None
-                    args.msg_file = None
-                    
-                    # Show status after task completion
-                    console.print(Panel(build_status(), title="Status", border_style="blue"))
-                    
-                    # Set flag to enter interactive mode after completing the current task
-                    args.enter_interactive_mode = True
+                # (This logic is now handled within the main with block)
+                # if not args.server and not args.chat:
+                #     # Clear message args to prompt for next task
+                #     args.message = None
+                #     args.msg_file = None
+                #     
+                #     # Show status after task completion
+                #     console.print(Panel(build_status(), title="Status", border_style="blue"))
+                #     
+                #     # Set flag to enter interactive mode after completing the current task
+                #     args.enter_interactive_mode = True
 
     except (KeyboardInterrupt, AgentInterrupt):
         print()
         print(" 👋 Bye!")
         print()
         sys.exit(0)
-        
-    # Enter interactive mode if flag is set
-    if getattr(args, 'enter_interactive_mode', False):
-        run_interactive_mode(args)
 
 
 if __name__ == "__main__":
