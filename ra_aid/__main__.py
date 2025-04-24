@@ -835,8 +835,16 @@ def process_task(args):
     # This function will contain the core task processing logic
     # that was previously in main()
     
-    # Create config repository for storing runtime configuration
-    config_repo = get_config_repository()
+    # Get or create config repository for storing runtime configuration
+    try:
+        # Try to get existing config repository
+        config_repo = get_config_repository()
+    except Exception as e:
+        # If it fails, initialize a new one
+        logger.debug(f"Config repository not found, initializing: {e}")
+        from ra_aid.database.repositories.config_repository import ConfigRepositoryManager
+        ConfigRepositoryManager.initialize()
+        config_repo = get_config_repository()
     
     # Store key arguments in config repository for access by tools
     config_repo.set("provider", args.provider)
@@ -964,6 +972,13 @@ def process_task(args):
 def run_interactive_mode(args):
     """Run RA.Aid in interactive mode with a command prompt."""
     display_welcome_message()
+    
+    # Ensure config repository is initialized
+    try:
+        from ra_aid.database.repositories.config_repository import ConfigRepositoryManager
+        ConfigRepositoryManager.initialize()
+    except Exception as e:
+        logger.debug(f"Error initializing config repository: {e}")
     
     try:
         while True:
