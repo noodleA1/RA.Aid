@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import json
+import time # <-- ADDED IMPORT
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -1064,6 +1065,12 @@ def main():
                         logger.info("Attempting to initialize MCP-Use client...")
                         mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
                         atexit.register(mcp_use_client_instance.close)
+                        
+                        # --- NEW: Wait for servers and show message ---
+                        console.print("[yellow]Initializing MCP servers (waiting 20s)...[/yellow]")
+                        time.sleep(20)
+                        # --- END NEW ---
+                        
                         logger.debug("MCPUseClientSync instance created. Getting active servers...")
                         active_mcp_servers = mcp_use_client_instance.get_active_server_names()
                         logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
