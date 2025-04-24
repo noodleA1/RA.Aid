@@ -1423,7 +1423,9 @@ def main():
                     # Instead of showing an error, set a flag to enter interactive mode later
                     args.enter_interactive_mode = True
 
-                if args.message:  # Only set base_task if message exists
+                # Initialize base_task with a default value
+                base_task = ""
+                if args.message:  # Set base_task if message exists
                     base_task = args.message
 
                 # Record CLI input in database
