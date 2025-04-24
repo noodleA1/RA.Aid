@@ -1228,6 +1228,7 @@ def main():
                 # Initialize and register MCP-Use client for cleanup if enabled
                 mcp_use_client_instance: Optional["MCPUseClientSync"] = None
                 active_mcp_servers = [] # Default to empty list
+                logger.debug("Attempting MCP initialization...") # <-- ADDED
                 if config_repo.get("mcp_use_enabled", False):
                     try:
                         mcp_use_config = config_repo.get("mcp_use_config")
@@ -1235,19 +1236,22 @@ def main():
                         logger.info("Attempting to initialize MCP-Use client...")
                         mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
                         atexit.register(mcp_use_client_instance.close)
+                        logger.debug("MCPUseClientSync instance created. Getting active servers...") # <-- ADDED
                         active_mcp_servers = mcp_use_client_instance.get_active_server_names()
                         logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
                     except Exception as e:
-                        logger.error(f"MCP-Use client initialization failed: {e}")
+                        logger.error(f"MCP-Use client initialization failed: {e}", exc_info=True) # <-- Added exc_info
                         logger.warning("MCP-Use integration will be disabled for this run.")
                         # Ensure flags reflect the failure
                         config_repo.set("mcp_use_enabled", False)
                         mcp_enabled = False # Update local var too
                         active_mcp_servers = []
                         mcp_use_client_instance = None
+                else:
+                    logger.debug("MCP-Use is disabled in config.") # <-- ADDED
                 
                 config_repo.set("active_mcp_servers", active_mcp_servers) # Store active servers
-                logger.debug(f"MCP Servers initialized in main: {active_mcp_servers}") # <-- ADDED LOGGING
+                logger.debug(f"MCP Servers list stored in config_repo: {active_mcp_servers}") # <-- MODIFIED LOGGING
 
                 # Determine if Task Master planning integration should be enabled
                 task_master_active = "taskmaster-ai" in active_mcp_servers
