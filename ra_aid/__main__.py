@@ -653,6 +653,24 @@ def is_stage_requested(stage: str) -> bool:
     return False
 
 
+def display_welcome_message():
+    """Display a welcome message when starting in interactive mode."""
+    welcome_text = """
+Welcome to RA.Aid Interactive Mode!
+
+I can help you with:
+• Code analysis and understanding
+• Implementing new features
+• Fixing bugs
+• Refactoring code
+• Researching technical topics
+
+Just type your request and press Enter.
+Press Ctrl+C to exit.
+    """
+    console.print(Panel(welcome_text, title="RA.Aid Interactive", border_style="green"))
+
+
 def wipe_project_memory(custom_dir=None):
     """Delete the project database file to wipe all stored memory.
 
@@ -788,6 +806,130 @@ def build_status():
     return status
 
 
+def process_task(args):
+    """Process a single task with the given arguments."""
+    # This function will contain the core task processing logic
+    # that was previously in main()
+    
+    # Create config repository for storing runtime configuration
+    config_repo = get_config_repository()
+    
+    # Store key arguments in config repository for access by tools
+    config_repo.set("provider", args.provider)
+    config_repo.set("model", args.model)
+    config_repo.set("temperature", args.temperature)
+    config_repo.set("expert_provider", args.expert_provider)
+    config_repo.set("expert_model", args.expert_model)
+    config_repo.set("research_only", args.research_only)
+    config_repo.set("web_research_enabled", args.web_research)
+    config_repo.set("search_enabled", args.search)
+    config_repo.set("hil", args.hil)
+    config_repo.set("test_cmd_timeout", args.test_cmd_timeout)
+    config_repo.set("max_test_cmd_retries", args.max_test_cmd_retries)
+    
+    # Initialize MCP-Use integration if enabled
+    mcp_use_client_instance = None
+    if hasattr(args, 'mcp_use_config') and args.mcp_use_config:
+        try:
+            from ra_aid.utils.mcp_use_client import MCPUseClientSync
+            logger.info(f"Attempting to initialize MCP-Use client...")
+            mcp_use_client_instance = MCPUseClientSync(args.mcp_use_config)
+            active_mcp_servers = mcp_use_client_instance.get_active_server_names()
+            logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
+            config_repo.set("mcp_use_enabled", True)
+            config_repo.set("active_mcp_servers", active_mcp_servers)
+        except Exception as e:
+            logger.error(f"MCP-Use client initialization failed: {e}")
+            logger.warning("MCP-Use integration will be disabled for this run.")
+            config_repo.set("mcp_use_enabled", False)
+            config_repo.set("active_mcp_servers", [])
+    
+    # Validate message is provided
+    if not args.message:
+        error_message = "No task provided"
+        print_error(error_message)
+        return
+    
+    # Store the human input in the database
+    human_input_repo = get_human_input_repository()
+    human_input_id = human_input_repo.create(args.message)
+    
+    # Run the appropriate agent based on the arguments
+    if args.research_only:
+        # Run research agent
+        run_research_agent(
+            args.message,
+            provider=args.provider,
+            model=args.model or DEFAULT_MODEL,
+            temperature=args.temperature,
+            web_research=args.web_research,
+            search=args.search,
+            research_only=args.research_only,
+            hil=args.hil,
+            memory=research_memory,
+        )
+    else:
+        # Initialize the LLM
+        llm = initialize_llm(
+            args.provider, args.model, temperature=args.temperature
+        )
+        
+        # Initialize the expert LLM if needed
+        expert_llm = None
+        if args.expert_provider and args.expert_model:
+            expert_llm = initialize_llm(
+                args.expert_provider, args.expert_model, temperature=args.temperature
+            )
+        
+        # Get custom tools
+        custom_tools = get_custom_tools(mcp_use_client=mcp_use_client_instance)
+        
+        # Create the planning agent
+        planning_agent = create_agent(
+            llm,
+            get_planning_tools(
+                web_research=args.web_research,
+                search=args.search,
+                expert_llm=expert_llm,
+                custom_tools=custom_tools,
+            ),
+            checkpointer=planning_memory,
+            agent_type="planning",
+        )
+        
+        # Run the planning agent
+        run_agent_with_retry(
+            planning_agent,
+            args.message,
+        )
+        
+        # Create and run the implementation agent if not in research-only mode
+        implementation_agent = create_agent(
+            llm,
+            get_implementation_tools(
+                web_research=args.web_research,
+                search=args.search,
+                expert_llm=expert_llm,
+                test_cmd_timeout=args.test_cmd_timeout,
+                max_test_cmd_retries=args.max_test_cmd_retries,
+                custom_tools=custom_tools,
+            ),
+            checkpointer=implementation_memory,
+            agent_type="implementation",
+        )
+        
+        run_agent_with_retry(
+            implementation_agent,
+            args.message,
+        )
+    
+    # Clean up MCP-Use client if it was initialized
+    if mcp_use_client_instance:
+        try:
+            mcp_use_client_instance.close()
+        except Exception as e:
+            logger.error(f"Error closing MCP-Use client: {e}")
+
 def main():
     """Main entry point for the ra-aid command line tool."""
     args = parse_arguments()
@@ -804,6 +946,10 @@ def main():
         result = wipe_project_memory(custom_dir=args.project_state_dir)
         logger.info(result)
         print(f"📋 {result}")
+        
+    # Display welcome message if no initial task
+    if not args.message and not args.msg_file and not args.server and not args.chat:
+        display_welcome_message()
 
     # Launch web interface if requested
     if args.server:
@@ -1226,28 +1372,31 @@ def main():
                 if (
                     not args.message and not args.wipe_project_memory
                 ):  # Add check for wipe_project_memory flag
-                    error_message = "--message or --msg-file is required"
+                    # Instead of showing an error, enter interactive mode
+                    display_welcome_message()
+                    
+                    # Enter interactive loop
                     try:
-                        trajectory_repo = get_trajectory_repository()
-                        human_input_id = (
-                            get_human_input_repository().get_most_recent_id()
-                        )
-                        trajectory_repo.create(
-                            step_data={
-                                "display_title": "Error",
-                                "error_message": error_message,
-                            },
-                            record_type="error",
-                            human_input_id=human_input_id,
-                            is_error=True,
-                            error_message=error_message,
-                        )
-                    except Exception as traj_error:
-                        # Swallow exception to avoid recursion
-                        logger.debug(f"Error recording trajectory: {traj_error}")
-                        pass
-                    print_error(error_message)
-                    sys.exit(1)
+                        while True:
+                            try:
+                                user_input = input("RA.Aid> ").strip()
+                                if not user_input:
+                                    continue
+                                args.message = user_input
+                                process_task(args)
+                                
+                                # Show status after each task
+                                console.print(Panel(build_status(), title="Status", border_style="blue"))
+                                
+                                # Clear message for next iteration
+                                args.message = None
+                            except (EOFError, KeyboardInterrupt):
+                                print("\n👋 Goodbye!")
+                                sys.exit(0)
+                    except Exception as e:
+                        logger.error(f"Error in interactive mode: {e}")
+                        print_error(f"Error: {str(e)}")
+                        sys.exit(1)
 
                 if args.message:  # Only set base_task if message exists
                     base_task = args.message
@@ -1353,6 +1502,34 @@ def main():
                 )
 
                 # for how long have we had a second planning agent triggered here?
+
+                # After task completion in normal mode, enter interactive mode
+                if not args.server and not args.chat:
+                    # Clear message args to prompt for next task
+                    args.message = None
+                    args.msg_file = None
+                    
+                    # Show status after task completion
+                    console.print(Panel(build_status(), title="Status", border_style="blue"))
+                    
+                    # Enter interactive loop
+                    try:
+                        while True:
+                            try:
+                                user_input = input("RA.Aid> ").strip()
+                                if not user_input:
+                                    continue
+                                args.message = user_input
+                                process_task(args)
+                                
+                                # Show status after each task
+                                console.print(Panel(build_status(), title="Status", border_style="blue"))
+                            except (EOFError, KeyboardInterrupt):
+                                print("\n👋 Goodbye!")
+                                break
+                    except Exception as e:
+                        logger.error(f"Error in interactive mode: {e}")
+                        print_error(f"Error: {str(e)}")
 
     except (KeyboardInterrupt, AgentInterrupt):
         print()
