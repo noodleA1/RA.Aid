@@ -740,6 +740,7 @@ def build_status():
     web_research_enabled = config_repo.get("web_research_enabled", False)
     custom_tools_enabled = config_repo.get("custom_tools_enabled", False)
     active_mcp_servers = config_repo.get("active_mcp_servers", [])
+    logger.debug("MCP Servers read by build_status: %s", active_mcp_servers)
 
     # Get the expert enabled status
     expert_enabled = bool(expert_provider and expert_model)
@@ -1246,6 +1247,7 @@ def main():
                         mcp_use_client_instance = None
                 
                 config_repo.set("active_mcp_servers", active_mcp_servers) # Store active servers
+                logger.debug("MCP Servers list stored in config_repo: %s", active_mcp_servers)
 
                 # Determine if Task Master planning integration should be enabled
                 task_master_active = "taskmaster-ai" in active_mcp_servers
