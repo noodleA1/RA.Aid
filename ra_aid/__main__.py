@@ -957,6 +957,13 @@ def run_interactive_mode(args, mcp_use_client_instance=None):
         ConfigRepositoryManager.initialize()
     except Exception as e:
         logger.debug(f"Error initializing config repository: {e}")
+        
+    # --- NEW: Display initial status ---    
+    try:
+        console.print(Panel(build_status(), title="Status", border_style="blue"))
+    except Exception as e:
+        logger.debug(f"Initial status display failed: {e}")
+    # --- END NEW ---
     
     try:
         while True:
