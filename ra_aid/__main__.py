@@ -904,8 +904,8 @@ def process_task(args, mcp_use_client_instance=None):
                 args.expert_provider, args.expert_model, temperature=args.temperature
             )
         
-        # Get custom tools
-        custom_tools = get_custom_tools(mcp_use_client=mcp_use_client_instance)
+        # Get/Load custom tools (call might have side effects)
+        get_custom_tools(mcp_use_client=mcp_use_client_instance)
         
         # Create the planning agent
         planning_agent = create_agent(
@@ -990,6 +990,9 @@ def main():
         base_dir=args.project_state_dir,
     )
     logger.debug("Starting RA.Aid with arguments: %s", args)
+
+    # Initialize MCP client instance to None
+    mcp_use_client_instance = None
 
     # Check if we need to wipe project memory before starting
     if args.wipe_project_memory:
@@ -1226,7 +1229,7 @@ def main():
                     try:
                         mcp_use_config = config_repo.get("mcp_use_config")
                         from ra_aid.utils.mcp_use_client import MCPUseClientSync 
-                        logger.info(f"Attempting to initialize MCP-Use client...")
+                        logger.info("Attempting to initialize MCP-Use client...")
                         mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
                         atexit.register(mcp_use_client_instance.close)
                         active_mcp_servers = mcp_use_client_instance.get_active_server_names()
