@@ -1053,6 +1053,34 @@ def main():
             ):
                 # This initializes all repositories and makes them available via their respective get methods
 
+                # Initialize and register MCP-Use client for cleanup if enabled
+                # Note: mcp_use_client_instance was initialized to None earlier
+                active_mcp_servers = [] # Default to empty list
+                logger.debug("Attempting MCP initialization...")
+                if config_repo.get("mcp_use_enabled", False):
+                    try:
+                        mcp_use_config = config_repo.get("mcp_use_config")
+                        from ra_aid.utils.mcp_use_client import MCPUseClientSync 
+                        logger.info("Attempting to initialize MCP-Use client...")
+                        mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
+                        atexit.register(mcp_use_client_instance.close)
+                        logger.debug("MCPUseClientSync instance created. Getting active servers...")
+                        active_mcp_servers = mcp_use_client_instance.get_active_server_names()
+                        logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
+                    except Exception as e:
+                        logger.error(f"MCP-Use client initialization failed: {e}", exc_info=True)
+                        logger.warning("MCP-Use integration will be disabled for this run.")
+                        # Ensure flags reflect the failure
+                        config_repo.set("mcp_use_enabled", False)
+                        mcp_enabled = False # Update local var too
+                        active_mcp_servers = []
+                        mcp_use_client_instance = None # Reset instance on failure
+                else:
+                    logger.debug("MCP-Use is disabled in config.")
+                
+                config_repo.set("active_mcp_servers", active_mcp_servers) # Store active servers
+                logger.debug("MCP Servers list stored in config_repo: %s", active_mcp_servers)
+
                 # Determine if we should start in interactive mode
                 start_interactive = not args.message and not args.msg_file and not args.server and not args.chat
 
@@ -1224,30 +1252,6 @@ def main():
 
                 config_repo.set("cowboy_mode", args.cowboy_mode) # Also add here for non-server mode
 
-
-                # Initialize and register MCP-Use client for cleanup if enabled
-                mcp_use_client_instance: Optional["MCPUseClientSync"] = None
-                active_mcp_servers = [] # Default to empty list
-                if config_repo.get("mcp_use_enabled", False):
-                    try:
-                        mcp_use_config = config_repo.get("mcp_use_config")
-                        from ra_aid.utils.mcp_use_client import MCPUseClientSync 
-                        logger.info("Attempting to initialize MCP-Use client...")
-                        mcp_use_client_instance = MCPUseClientSync(mcp_use_config)
-                        atexit.register(mcp_use_client_instance.close)
-                        active_mcp_servers = mcp_use_client_instance.get_active_server_names()
-                        logger.info(f"MCP-Use client initialized. Active servers: {active_mcp_servers}")
-                    except Exception as e:
-                        logger.error(f"MCP-Use client initialization failed: {e}")
-                        logger.warning("MCP-Use integration will be disabled for this run.")
-                        # Ensure flags reflect the failure
-                        config_repo.set("mcp_use_enabled", False)
-                        mcp_enabled = False # Update local var too
-                        active_mcp_servers = []
-                        mcp_use_client_instance = None
-                
-                config_repo.set("active_mcp_servers", active_mcp_servers) # Store active servers
-                logger.debug("MCP Servers list stored in config_repo: %s", active_mcp_servers)
 
                 # Determine if Task Master planning integration should be enabled
                 task_master_active = "taskmaster-ai" in active_mcp_servers
