@@ -97,7 +97,8 @@ What sets RA.Aid apart is its ability to handle complex programming tasks that e
   - Memory management
   - Research and planning tools
   - Code analysis capabilities
-- **Interactive CLI Interface**: Simple yet powerful command-line interface for seamless interaction
+- **Interactive CLI**: Simple yet powerful command-line interface with continuous interactive mode for seamless multitask workflows
+- **Persistent Memory**: Maintain context and memory between tasks in interactive mode for continuous development sessions
 - **Modular Design**: Structured as a Python package with specialized modules for console output, processing, text utilities, and tools
 - **Git Integration**: Built-in support for Git operations and repository management
 
@@ -222,6 +223,13 @@ RA.Aid is designed to be simple yet powerful. Here's how to use it:
 # Basic usage
 ra-aid -m "Your task or query here"
 
+# Interactive mode (start without a task and enter multiple tasks sequentially)
+ra-aid
+
+# Start with an initial task and continue in interactive mode
+# (After completing the initial task, RA.Aid will prompt for your next task)
+ra-aid -m "Analyze this codebase"
+
 # Research-only mode (no implementation)
 ra-aid -m "Explain the authentication flow" --research-only
 
@@ -236,7 +244,7 @@ More information is available in our [Usage Examples](https://docs.ra-aid.ai/cat
 
 ### Command Line Options
 
-- `-m, --message`: The task or query to be executed (required except in chat mode, cannot be used with --msg-file)
+- `-m, --message`: The task or query to be executed (optional - if not provided, RA.Aid starts in interactive mode; cannot be used with --msg-file)
 - `--msg-file`: Path to a text file containing the task/message (cannot be used with --message)
 - `--research-only`: Only perform research without implementation
 - `--provider`: The LLM provider to use (choices: anthropic, openai, openrouter, openai-compatible, gemini)
